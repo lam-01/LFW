@@ -18,32 +18,27 @@ import time
 # 📌 Tải và xử lý dữ liệu LFW từ OpenML
 @st.cache_data
 def load_data(min_faces_per_person=1, sample_size=None):
-    # Load LFW dataset
-    lfw = fetch_lfw_people(min_faces_per_person=min_faces_per_person, resize=0.4, color=False)
-    X, y = lfw.data, lfw.target
-    target_names = lfw.target_names
-    X = X / 255.0  # Normalize pixel values
-    
-    # If sample_size exceeds available data, adjust and warn
-    total_available = len(X)
-    if sample_size is not None:
-        if sample_size > total_available:
-            sample_size = total_available
-        X, _, y, _ = train_test_split(X, y, train_size=sample_size, random_state=42)
-    
-    return X, y, target_names
-
-# 📌 Chia dữ liệu thành train, validation, và test
-@st.cache_data
-def split_data(X, y, train_size=0.7, val_size=0.15, test_size=0.15, random_state=42):
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=test_size, random_state=random_state
-    )
-    X_train, X_val, y_train, y_val = train_test_split(
-        X_train, y_train, test_size=val_size / (train_size + val_size), random_state=random_state
-    )
-    return X_train, X_val, X_test, y_train, y_val, y_test
-
+    try:
+        # Load LFW dataset
+        st.write(f"Đang tải dữ liệu LFW với min_faces_per_person={min_faces_per_person}, sample_size={sample_size}...")
+        lfw = fetch_lfw_people(min_faces_per_person=min_faces_per_person, resize=0.4, color=False)
+        X, y = lfw.data, lfw.target
+        target_names = lfw.target_names
+        X = X / 255.0  # Normalize pixel values
+        
+        # If sample_size exceeds available data, adjust and warn
+        total_available = len(X)
+        if sample_size is not None:
+            if sample_size > total_available:
+                st.warning(f"⚠️ Yêu cầu {sample_size} mẫu, nhưng chỉ có {total_available} mẫu với min_faces_per_person={min_faces_per_person}. Trả về tất cả {total_available} mẫu.")
+                sample_size = total_available
+            X, _, y, _ = train_test_split(X, y, train_size=sample_size, random_state=42)
+        
+        st.write(f"Đã tải xong: {len(X)} mẫu, {len(target_names)} người.")
+        return X, y, target_names
+    except Exception as e:
+        st.error(f"❌ Lỗi trong load_data: {str(e)}")
+        raise  
 def train_model(custom_model_name, model_name, params, X_train, X_val, X_test, y_train, y_val, y_test, img_shape):
     progress_bar = st.progress(0)
     status_text = st.empty()
@@ -181,12 +176,16 @@ def create_streamlit_app():
             st.latex(r"y = \text{softmax}(W \cdot x + b)")
 
     with tab2:
-        min_faces = st.number_input("Số ảnh tối thiểu mỗi người", 1, 100, 20)  # Allow min_faces=1
-        sample_size = st.number_input("Cỡ mẫu huấn luyện", 100, 13233, 10000, step=100)  # Max set to full dataset size
-        X, y, target_names = load_data(min_faces_per_person=min_faces, sample_size=sample_size)
-        img_shape = (50, 37)  # LFW default shape with resize=0.4
-        st.write(f"**Số lượng mẫu: {X.shape[0]}, Số người: {len(np.unique(y))}**")  # Update to show unique people in sample
-        show_sample_images(X, y, target_names, img_shape)
+        min_faces = st.number_input("Số ảnh tối thiểu mỗi người", 1, 100, 20)
+        sample_size = st.number_input("Cỡ mẫu huấn luyện", 100, 13233, 10000, step=100)
+        try:
+            X, y, target_names = load_data(min_faces_per_person=min_faces, sample_size=sample_size)
+            img_shape = (50, 37)  # LFW default shape with resize=0.4
+            st.write(f"**Số lượng mẫu: {X.shape[0]}, Số người: {len(np.unique(y))}**")
+            show_sample_images(X, y, target_names, img_shape)
+        except Exception as e:
+            st.error(f"❌ Lỗi khi tải dữ liệu: {str(e)}")
+            return
 
         test_size = st.slider("Tỷ lệ Test (%)", 5, 30, 15, step=5)
         val_size = st.slider("Tỷ lệ Validation (%)", 5, 30, 15, step=5)
