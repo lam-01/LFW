@@ -17,13 +17,20 @@ import time
 
 # 📌 Tải và xử lý dữ liệu LFW từ OpenML
 @st.cache_data
-def load_data(min_faces_per_person=20, sample_size=None):
+def load_data(min_faces_per_person=1, sample_size=None):
+    # Load LFW dataset
     lfw = fetch_lfw_people(min_faces_per_person=min_faces_per_person, resize=0.4, color=False)
     X, y = lfw.data, lfw.target
     target_names = lfw.target_names
     X = X / 255.0  # Normalize pixel values
-    if sample_size is not None and sample_size < len(X):
+    
+    # If sample_size exceeds available data, adjust and warn
+    total_available = len(X)
+    if sample_size is not None:
+        if sample_size > total_available:
+            sample_size = total_available
         X, _, y, _ = train_test_split(X, y, train_size=sample_size, random_state=42)
+    
     return X, y, target_names
 
 # 📌 Chia dữ liệu thành train, validation, và test
