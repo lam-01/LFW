@@ -181,11 +181,11 @@ def create_streamlit_app():
             st.latex(r"y = \text{softmax}(W \cdot x + b)")
 
     with tab2:
-        min_faces = st.number_input("Số ảnh tối thiểu mỗi người", 10, 100, 20)
-        sample_size = st.number_input("Cỡ mẫu huấn luyện", 100, 10000, 1000, step=100)
+        min_faces = st.number_input("Số ảnh tối thiểu mỗi người", 1, 100, 20)  # Allow min_faces=1
+        sample_size = st.number_input("Cỡ mẫu huấn luyện", 100, 13233, 10000, step=100)  # Max set to full dataset size
         X, y, target_names = load_data(min_faces_per_person=min_faces, sample_size=sample_size)
         img_shape = (50, 37)  # LFW default shape with resize=0.4
-        st.write(f"**Số lượng mẫu: {X.shape[0]}, Số người: {len(target_names)}**")
+        st.write(f"**Số lượng mẫu: {X.shape[0]}, Số người: {len(np.unique(y))}**")  # Update to show unique people in sample
         show_sample_images(X, y, target_names, img_shape)
 
         test_size = st.slider("Tỷ lệ Test (%)", 5, 30, 15, step=5)
