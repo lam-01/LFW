@@ -17,20 +17,26 @@ import time
 @st.cache_data
 def load_data(sample_size=None):
     lfw = fetch_lfw_people(resize=0.4, color=False)
-    X, y = lfw.data, lfw.target 
+    X, y = lfw.data, lfw.target
     target_names = lfw.target_names
     X = X / 255.0
 
-    unique_labels, counts = np.unique(y, return_counts=True)
+    # Re-encode labels
+    unique_labels = np.unique(y)
+    label_map = {old_label: new_label for new_label, old_label in enumerate(unique_labels)}
+    y_encoded = np.array([label_map[label] for label in y])
+
+    # Balance dataset
+    unique_labels_encoded, counts = np.unique(y_encoded, return_counts=True)
     min_images_per_person = min(counts)
     
     balanced_X = []
     balanced_y = []
-    for label in unique_labels:
-        indices = np.where(y == label)[0]
+    for label in unique_labels_encoded:
+        indices = np.where(y_encoded == label)[0]
         sampled_indices = np.random.choice(indices, min_images_per_person, replace=False)
         balanced_X.append(X[sampled_indices])
-        balanced_y.append(y[sampled_indices])
+        balanced_y.append(y_encoded[sampled_indices])
     
     X = np.vstack(balanced_X)
     y = np.hstack(balanced_y)
@@ -38,7 +44,7 @@ def load_data(sample_size=None):
     if sample_size is not None and sample_size < len(X):
         X, _, y, _ = train_test_split(X, y, train_size=sample_size, random_state=42)
 
-    return X, y, target_names
+    return X, y, target_names, label_map  # Return label_map for prediction
 
 @st.cache_data
 def split_data(X, y, train_size=0.7, val_size=0.15, test_size=0.15, random_state=42):
@@ -197,14 +203,14 @@ def create_streamlit_app():
     with tab2:
         sample_size = st.number_input("Cỡ mẫu huấn luyện", 100, 5000, 1000, step=100)
         try:
-            X, y, target_names = load_data(sample_size=sample_size)
+            X, y, target_names, label_map = load_data(sample_size=sample_size)
             img_shape = (50, 37)
             st.write(f"**Số lượng mẫu: {X.shape[0]}, Số người: {len(target_names)}**")
             st.write(f"**Số ảnh mỗi người: {X.shape[0] // len(target_names)}**")
             show_sample_images(X, y, target_names, img_shape)
         except Exception as e:
             st.error(f"❌ Lỗi khi tải hoặc hiển thị dữ liệu: {str(e)}")
-            X, y, target_names = None, None, None
+            X, y, target_names, label_map = None, None, None, None
 
         if X is not None:
             test_size = st.slider("Tỷ lệ Test (%)", 5, 30, 15, step=5)
@@ -221,7 +227,7 @@ def create_streamlit_app():
                     "Tỷ lệ (%)": [train_size - val_size, val_size, test_size],
                     "Số lượng mẫu": [len(X_train), len(X_val), len(X_test)]
                 })
-                st.table(data_ratios)
+                st.table(data_r ratios)
 
                 st.write("**🚀 Huấn luyện mô hình**")
                 custom_model_name = st.text_input("Nhập tên mô hình:", "Default_model")
@@ -276,7 +282,7 @@ def create_streamlit_app():
         img_shape = (50, 37)
         uploaded_file = st.file_uploader("📤 Tải ảnh khuôn mặt (PNG, JPG)", type=["png", "jpg", "jpeg"])
         
-        if uploaded_file is not None and model is not None:
+        if uploaded_file is not None and model is not None and label_map is not None:
             image = cv2.imdecode(np.frombuffer(uploaded_file.read(), np.uint8), cv2.IMREAD_COLOR)
             processed_image = preprocess_uploaded_image(image, img_shape)
             st.image(image, caption="📷 Ảnh tải lên", use_column_width=True)
@@ -290,7 +296,12 @@ def create_streamlit_app():
                         processed_image_reshaped = processed_image.reshape((1, *img_shape, 1))
                         pred = np.argmax(model.predict(processed_image_reshaped), axis=1)[0]
                         probs = model.predict(processed_image_reshaped)[0]
-                    st.write(f"🎯 **Dự đoán: {target_names[pred]}**")
+                    
+                    original_labels = list(label_map.keys())
+                    encoded_labels = list(label_map.values())
+                    original_pred = original_labels[encoded_labels.index(pred)]
+                    
+                    st.write(f"🎯 **Dự đoán: {target_names[original_pred]}**")
                     st.write(f"🔢 **Độ tin cậy: {probs[pred] * 100:.2f}%**")
                 except Exception as e:
                     st.error(f"❌ Lỗi khi dự đoán: {str(e)}")
