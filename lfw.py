@@ -14,11 +14,10 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import time
 
-# Load and balance LFW dataset
 @st.cache_data
 def load_data(sample_size=None):
     lfw = fetch_lfw_people(resize=0.4, color=False)
-    X, y = lfw.data, lfw.target
+    X, y = lfw.data, lfw.target 
     target_names = lfw.target_names
     X = X / 255.0
 
@@ -41,7 +40,6 @@ def load_data(sample_size=None):
 
     return X, y, target_names
 
-# Split data into train, validation, and test sets
 @st.cache_data
 def split_data(X, y, train_size=0.7, val_size=0.15, test_size=0.15, random_state=42):
     X_train, X_test, y_train, y_test = train_test_split(
@@ -50,9 +48,11 @@ def split_data(X, y, train_size=0.7, val_size=0.15, test_size=0.15, random_state
     X_train, X_val, y_train, y_val = train_test_split(
         X_train, y_train, test_size=val_size / (train_size + val_size), random_state=random_state
     )
+    st.write(f"Train labels: {np.unique(y_train, return_counts=True)}")
+    st.write(f"Val labels: {np.unique(y_val, return_counts=True)}")
+    st.write(f"Test labels: {np.unique(y_test, return_counts=True)}")
     return X_train, X_val, X_test, y_train, y_val, y_test
 
-# Train model with progress bar
 def train_model(custom_model_name, model_name, params, X_train, X_val, X_test, y_train, y_val, y_test, img_shape):
     progress_bar = st.progress(0)
     status_text = st.empty()
@@ -90,7 +90,7 @@ def train_model(custom_model_name, model_name, params, X_train, X_val, X_test, y
                 X_val_reshaped = X_val.reshape((-1, *img_shape, 1))
                 X_test_reshaped = X_test.reshape((-1, *img_shape, 1))
                 model.fit(X_train_reshaped, y_train, epochs=params["epochs"], batch_size=32, 
-                          validation_data=(X_val_reshaped, y_val), verbose=0)
+                          validation_data=(X_val_reshaped, y_val), verbose=1)
 
             train_end_time = time.time()
             progress_bar.progress(0.5)
@@ -104,6 +104,10 @@ def train_model(custom_model_name, model_name, params, X_train, X_val, X_test, y
                 y_train_pred = np.argmax(model.predict(X_train_reshaped), axis=1)
                 y_val_pred = np.argmax(model.predict(X_val_reshaped), axis=1)
                 y_test_pred = np.argmax(model.predict(X_test_reshaped), axis=1)
+
+            st.write(f"Train pred sample: {y_train_pred[:5]}, Train true sample: {y_train[:5]}")
+            st.write(f"Val pred sample: {y_val_pred[:5]}, Val true sample: {y_val[:5]}")
+            st.write(f"Test pred sample: {y_test_pred[:5]}, Test true sample: {y_test[:5]}")
 
             progress_bar.progress(0.8)
             status_text.text("Đã dự đoán xong... (80%)")
@@ -133,14 +137,12 @@ def train_model(custom_model_name, model_name, params, X_train, X_val, X_test, y
 
     return model, train_accuracy, val_accuracy, test_accuracy
 
-# Preprocess uploaded image
 def preprocess_uploaded_image(image, img_shape):
     image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     image = cv2.resize(image, img_shape)
     image = image / 255.0
     return image.reshape(1, -1)
 
-# Display sample images with error handling
 def show_sample_images(X, y, target_names, img_shape):
     st.write("**🖼️ Một vài mẫu dữ liệu từ LFW**")
     st.write(f"X shape: {X.shape}, y shape: {y.shape}, unique labels: {len(np.unique(y))}, img_shape: {img_shape}")
@@ -168,7 +170,6 @@ def show_sample_images(X, y, target_names, img_shape):
             st.error(f"❌ Lỗi reshape cho nhãn {target_names[label]}: {str(e)}")
     st.pyplot(fig)
 
-# Streamlit app
 def create_streamlit_app():
     st.title("👤 Nhận diện khuôn mặt với LFW")
     tab1, tab2, tab3, tab4 = st.tabs(["📓 Lí thuyết", "📋 Huấn luyện", "🔮 Dự đoán", "⚡ MLflow"])
@@ -203,9 +204,9 @@ def create_streamlit_app():
             show_sample_images(X, y, target_names, img_shape)
         except Exception as e:
             st.error(f"❌ Lỗi khi tải hoặc hiển thị dữ liệu: {str(e)}")
-            X, y, target_names = None, None, None  # Prevent further execution if data fails
+            X, y, target_names = None, None, None
 
-        if X is not None:  # Only proceed if data is loaded successfully
+        if X is not None:
             test_size = st.slider("Tỷ lệ Test (%)", 5, 30, 15, step=5)
             val_size = st.slider("Tỷ lệ Validation (%)", 5, 30, 15, step=5)
             train_size = 100 - test_size
@@ -229,9 +230,9 @@ def create_streamlit_app():
 
                 if model_name == "SVM":
                     params["kernel"] = st.selectbox("⚙️ Kernel", ["linear", "rbf", "poly", "sigmoid"])
-                    params["C"] = st.slider("🔧 Tham số C", 0.1, 10.0, 1.0)
+                    params["C"] = st.slider("🔧 Tham số C", 0.01, 1.0, 0.1)
                 elif model_name == "CNN":
-                    params["epochs"] = st.slider("🔄 Số epoch", 5, 50, 10)
+                    params["epochs"] = st.slider("🔄 Số epoch", 5, 20, 10)
 
                 if st.button("🚀 Huấn luyện"):
                     with st.spinner("🔄 Đang huấn luyện..."):
