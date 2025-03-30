@@ -175,7 +175,7 @@ def create_streamlit_app():
 
     with tab2:
         min_faces = st.number_input("Số ảnh tối thiểu mỗi người", 10, 100, 20)
-        sample_size = st.number_input("Cỡ mẫu huấn luyện", 100, 5000, 1000, step=100)
+        sample_size = st.number_input("Cỡ mẫu huấn luyện", 100, 10000, 1000, step=100)
         X, y, target_names = load_data(min_faces_per_person=min_faces, sample_size=sample_size)
         img_shape = (50, 37)  # LFW default shape with resize=0.4
         st.write(f"**Số lượng mẫu: {X.shape[0]}, Số người: {len(target_names)}**")
