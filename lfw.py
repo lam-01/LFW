@@ -37,7 +37,6 @@ def split_data(X, y, train_size=0.7, val_size=0.15, test_size=0.15, random_state
     )
     return X_train, X_val, X_test, y_train, y_val, y_test
 
-# 📌 Huấn luyện mô hình với thanh tiến trình
 def train_model(custom_model_name, model_name, params, X_train, X_val, X_test, y_train, y_val, y_test, img_shape):
     progress_bar = st.progress(0)
     status_text = st.empty()
@@ -51,7 +50,7 @@ def train_model(custom_model_name, model_name, params, X_train, X_val, X_test, y
         )
     elif model_name == "CNN":
         model = models.Sequential([
-            layers.Reshape((*img_shape, 1), input_shape=(X_train.shape[1],)),
+            layers.Input(shape=(*img_shape, 1)),  # Define input shape directly as (50, 37, 1)
             layers.Conv2D(32, (3, 3), activation='relu', padding='same'),
             layers.MaxPooling2D((2, 2)),
             layers.Conv2D(64, (3, 3), activation='relu', padding='same'),
@@ -68,12 +67,10 @@ def train_model(custom_model_name, model_name, params, X_train, X_val, X_test, y
 
     try:
         with mlflow.start_run(run_name=custom_model_name):
-            # Bước 1: Khởi tạo mô hình
             progress_bar.progress(0.1)
             status_text.text("Đang huấn luyện mô hình... (10%)")
             start_time = time.time()
 
-            # Bước 2: Huấn luyện mô hình
             if model_name == "SVM":
                 model.fit(X_train, y_train)
             elif model_name == "CNN":
@@ -84,11 +81,9 @@ def train_model(custom_model_name, model_name, params, X_train, X_val, X_test, y
                           validation_data=(X_val_reshaped, y_val), verbose=0)
 
             train_end_time = time.time()
-            train_duration = train_end_time - start_time
             progress_bar.progress(0.5)
             status_text.text(f"Đã huấn luyện xong... (50%)")
 
-            # Bước 3: Dự đoán trên các tập dữ liệu
             if model_name == "SVM":
                 y_train_pred = model.predict(X_train)
                 y_val_pred = model.predict(X_val)
@@ -101,12 +96,10 @@ def train_model(custom_model_name, model_name, params, X_train, X_val, X_test, y
             progress_bar.progress(0.8)
             status_text.text("Đã dự đoán xong... (80%)")
 
-            # Tính toán độ chính xác
             train_accuracy = accuracy_score(y_train, y_train_pred)
             val_accuracy = accuracy_score(y_val, y_val_pred)
             test_accuracy = accuracy_score(y_test, y_test_pred)
 
-            # Bước 4: Ghi log vào MLflow
             status_text.text("Đang ghi log vào MLflow... (90%)")
             mlflow.log_param("model_name", model_name)
             mlflow.log_params(params)
@@ -226,7 +219,7 @@ def create_streamlit_app():
                 st.write(f"🎯 Validation Accuracy: {val_acc:.4f}")
                 st.write(f"🎯 Test Accuracy: {test_acc:.4f}")
 
-    with tab3:
+   with tab3:
         option = st.radio("🖼️ Chọn phương thức nhập:", ["📂 Tải ảnh lên", "✏️ Vẽ ảnh"])
         img_shape = (50, 37)
         if option == "📂 Tải ảnh lên":
@@ -241,7 +234,7 @@ def create_streamlit_app():
                         if model_name == "SVM":
                             pred = model.predict(processed_image)[0]
                             probs = model.predict_proba(processed_image)[0]
-                        else:
+                        else:  # CNN
                             processed_image_reshaped = processed_image.reshape((1, *img_shape, 1))
                             pred = np.argmax(model.predict(processed_image_reshaped), axis=1)[0]
                             probs = model.predict(processed_image_reshaped)[0]
@@ -260,13 +253,12 @@ def create_streamlit_app():
                         if model_name == "SVM":
                             pred = model.predict(processed_canvas)[0]
                             probs = model.predict_proba(processed_canvas)[0]
-                        else:
+                        else:  # CNN
                             processed_canvas_reshaped = processed_canvas.reshape((1, *img_shape, 1))
                             pred = np.argmax(model.predict(processed_canvas_reshaped), axis=1)[0]
                             probs = model.predict(processed_canvas_reshaped)[0]
                         st.write(f"🎯 Dự đoán: {target_names[pred]}")
                         st.write(f"🔢 Độ tin cậy: {probs[pred] * 100:.2f}%")
-
     with tab4:
         st.write("##### 📊 MLflow Tracking")
         runs = mlflow.search_runs(order_by=["start_time desc"])
