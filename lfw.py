@@ -220,45 +220,62 @@ def create_streamlit_app():
                 st.write(f"🎯 Test Accuracy: {test_acc:.4f}")
 
     with tab3:
-        option = st.radio("🖼️ Chọn phương thức nhập:", ["📂 Tải ảnh lên", "✏️ Vẽ ảnh"])
-        img_shape = (50, 37)
-        if option == "📂 Tải ảnh lên":
-            uploaded_file = st.file_uploader("📤 Tải ảnh khuôn mặt (PNG, JPG)", type=["png", "jpg", "jpeg"])
-            if uploaded_file is not None:
-                image = cv2.imdecode(np.frombuffer(uploaded_file.read(), np.uint8), cv2.IMREAD_COLOR)
-                processed_image = preprocess_uploaded_image(image, img_shape)
-                st.image(image, caption="📷 Ảnh tải lên", use_column_width=True)
-                if st.button("🔮 Dự đoán"):
-                    model, _, _, _ = train_model(custom_model_name, model_name, params, X_train, X_val, X_test, y_train, y_val, y_test, img_shape)
-                    if model is not None:
-                        if model_name == "SVM":
-                            pred = model.predict(processed_image)[0]
-                            probs = model.predict_proba(processed_image)[0]
-                        else:  # CNN
-                            processed_image_reshaped = processed_image.reshape((1, *img_shape, 1))
-                            pred = np.argmax(model.predict(processed_image_reshaped), axis=1)[0]
-                            probs = model.predict(processed_image_reshaped)[0]
-                        st.write(f"🎯 Dự đoán: {target_names[pred]}")
-                        st.write(f"🔢 Độ tin cậy: {probs[pred] * 100:.2f}%")
-        elif option == "✏️ Vẽ ảnh":
-            canvas_result = st_canvas(
-                fill_color="white", stroke_width=5, stroke_color="black",
-                background_color="white", width=200, height=280, drawing_mode="freedraw", key="canvas"
-            )
+        st.write("##### 🔮 Dự đoán trên ảnh tải lên")
+        
+        # Load available trained models from MLflow
+        runs = mlflow.search_runs(order_by=["start_time desc"])
+        if not runs.empty:
+            runs["model_custom_name"] = runs["tags.mlflow.runName"]
+            available_models = runs["model_custom_name"].dropna().unique().tolist()
+        else:
+            available_models = []
+
+        if available_models:
+            selected_model_name = st.selectbox("📝 Chọn mô hình đã huấn luyện:", available_models)
+            selected_run = runs[runs["model_custom_name"] == selected_model_name].iloc[0]
+            run_id = selected_run["run_id"]
+            
+            # Load the model from MLflow
+            model_type = selected_run["params.model_name"]
+            model_uri = f"runs:/{run_id}/{model_type}"
+            try:
+                if model_type == "SVM":
+                    model = mlflow.sklearn.load_model(model_uri)
+                elif model_type == "CNN":
+                    model = mlflow.tensorflow.load_model(model_uri)
+                st.success(f"✅ Đã tải mô hình: `{selected_model_name}` (Loại: {model_type})")
+            except Exception as e:
+                st.error(f"❌ Lỗi khi tải mô hình: {str(e)}")
+                model = None
+        else:
+            st.warning("⚠️ Không có mô hình nào được lưu trong MLflow.")
+            model = None
+
+        # Upload image for prediction
+        img_shape = (50, 37)  # LFW default shape with resize=0.4
+        uploaded_file = st.file_uploader("📤 Tải ảnh khuôn mặt (PNG, JPG)", type=["png", "jpg", "jpeg"])
+        
+        if uploaded_file is not None and model is not None:
+            image = cv2.imdecode(np.frombuffer(uploaded_file.read(), np.uint8), cv2.IMREAD_COLOR)
+            processed_image = preprocess_uploaded_image(image, img_shape)
+            st.image(image, caption="📷 Ảnh tải lên", use_column_width=True)
+            
             if st.button("🔮 Dự đoán"):
-                if canvas_result.image_data is not None:
-                    processed_canvas = preprocess_canvas_image(canvas_result.image_data, img_shape)
-                    model, _, _, _ = train_model(custom_model_name, model_name, params, X_train, X_val, X_test, y_train, y_val, y_test, img_shape)
-                    if model is not None:
-                        if model_name == "SVM":
-                            pred = model.predict(processed_canvas)[0]
-                            probs = model.predict_proba(processed_canvas)[0]
-                        else:  # CNN
-                            processed_canvas_reshaped = processed_canvas.reshape((1, *img_shape, 1))
-                            pred = np.argmax(model.predict(processed_canvas_reshaped), axis=1)[0]
-                            probs = model.predict(processed_canvas_reshaped)[0]
-                        st.write(f"🎯 Dự đoán: {target_names[pred]}")
-                        st.write(f"🔢 Độ tin cậy: {probs[pred] * 100:.2f}%")
+                try:
+                    if model_type == "SVM":
+                        pred = model.predict(processed_image)[0]
+                        probs = model.predict_proba(processed_image)[0]
+                    elif model_type == "CNN":
+                        processed_image_reshaped = processed_image.reshape((1, *img_shape, 1))
+                        pred = np.argmax(model.predict(processed_image_reshaped), axis=1)[0]
+                        probs = model.predict(processed_image_reshaped)[0]
+                    
+                    st.write(f"🎯 **Dự đoán: {target_names[pred]}**")
+                    st.write(f"🔢 **Độ tin cậy: {probs[pred] * 100:.2f}%**")
+                except Exception as e:
+                    st.error(f"❌ Lỗi khi dự đoán: {str(e)}")
+        elif uploaded_file is not None and model is None:
+            st.error("❌ Vui lòng chọn một mô hình hợp lệ trước khi dự đoán.")
     with tab4:
         st.write("##### 📊 MLflow Tracking")
         runs = mlflow.search_runs(order_by=["start_time desc"])
