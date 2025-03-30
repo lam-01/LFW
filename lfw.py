@@ -14,42 +14,139 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import time
 
-# Updated load_data function
+# 📌 Tải và xử lý dữ liệu LFW từ OpenML
 @st.cache_data
-def load_data(sample_size=None):
-    lfw = fetch_lfw_people(resize=0.4, color=False)
+def load_data(min_faces_per_person=20, sample_size=None):
+    lfw = fetch_lfw_people(min_faces_per_person=min_faces_per_person, resize=0.4, color=False)
     X, y = lfw.data, lfw.target
     target_names = lfw.target_names
-    X = X / 255.0
-
-    unique_labels, counts = np.unique(y, return_counts=True)
-    min_images_per_person = min(counts)
-    
-    balanced_X = []
-    balanced_y = []
-    for label in unique_labels:
-        indices = np.where(y == label)[0]
-        sampled_indices = np.random.choice(indices, min_images_per_person, replace=False)
-        balanced_X.append(X[sampled_indices])
-        balanced_y.append(y[sampled_indices])
-    
-    X = np.vstack(balanced_X)
-    y = np.hstack(balanced_y)
-
+    X = X / 255.0  # Normalize pixel values
     if sample_size is not None and sample_size < len(X):
         X, _, y, _ = train_test_split(X, y, train_size=sample_size, random_state=42)
-
     return X, y, target_names
 
-# [split_data, train_model, preprocess_uploaded_image, show_sample_images remain unchanged]
+# 📌 Chia dữ liệu thành train, validation, và test
+@st.cache_data
+def split_data(X, y, train_size=0.7, val_size=0.15, test_size=0.15, random_state=42):
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=test_size, random_state=random_state
+    )
+    X_train, X_val, y_train, y_val = train_test_split(
+        X_train, y_train, test_size=val_size / (train_size + val_size), random_state=random_state
+    )
+    return X_train, X_val, X_test, y_train, y_val, y_test
 
+# 📌 Huấn luyện mô hình với thanh tiến trình
+def train_model(custom_model_name, model_name, params, X_train, X_val, X_test, y_train, y_val, y_test, img_shape):
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    status_text.text("Đang khởi tạo mô hình... (0%)")
+
+    if model_name == "SVM":
+        model = SVC(
+            kernel=params["kernel"],
+            C=params["C"],
+            probability=True
+        )
+    elif model_name == "CNN":
+        model = models.Sequential([
+            layers.Input(shape=(*img_shape, 1)),  # Input shape as (50, 37, 1)
+            layers.Conv2D(32, (3, 3), activation='relu', padding='same'),
+            layers.MaxPooling2D((2, 2)),
+            layers.Conv2D(64, (3, 3), activation='relu', padding='same'),
+            layers.MaxPooling2D((2, 2)),
+            layers.Conv2D(64, (3, 3), activation='relu', padding='same'),
+            layers.Flatten(),
+            layers.Dense(128, activation='relu'),
+            layers.Dropout(0.5),
+            layers.Dense(len(np.unique(y_train)), activation='softmax')
+        ])
+        model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+    else:
+        raise ValueError("Invalid model selected!")
+
+    try:
+        with mlflow.start_run(run_name=custom_model_name):
+            progress_bar.progress(0.1)
+            status_text.text("Đang huấn luyện mô hình... (10%)")
+            start_time = time.time()
+
+            if model_name == "SVM":
+                model.fit(X_train, y_train)
+            elif model_name == "CNN":
+                X_train_reshaped = X_train.reshape((-1, *img_shape, 1))
+                X_val_reshaped = X_val.reshape((-1, *img_shape, 1))
+                X_test_reshaped = X_test.reshape((-1, *img_shape, 1))
+                model.fit(X_train_reshaped, y_train, epochs=params["epochs"], batch_size=32, 
+                          validation_data=(X_val_reshaped, y_val), verbose=0)
+
+            train_end_time = time.time()
+            progress_bar.progress(0.5)
+            status_text.text(f"Đã huấn luyện xong... (50%)")
+
+            if model_name == "SVM":
+                y_train_pred = model.predict(X_train)
+                y_val_pred = model.predict(X_val)
+                y_test_pred = model.predict(X_test)
+            elif model_name == "CNN":
+                y_train_pred = np.argmax(model.predict(X_train_reshaped), axis=1)
+                y_val_pred = np.argmax(model.predict(X_val_reshaped), axis=1)
+                y_test_pred = np.argmax(model.predict(X_test_reshaped), axis=1)
+
+            progress_bar.progress(0.8)
+            status_text.text("Đã dự đoán xong... (80%)")
+
+            train_accuracy = accuracy_score(y_train, y_train_pred)
+            val_accuracy = accuracy_score(y_val, y_val_pred)
+            test_accuracy = accuracy_score(y_test, y_test_pred)
+
+            status_text.text("Đang ghi log vào MLflow... (90%)")
+            mlflow.log_param("model_name", model_name)
+            mlflow.log_params(params)
+            mlflow.log_metric("train_accuracy", train_accuracy)
+            mlflow.log_metric("val_accuracy", val_accuracy)
+            mlflow.log_metric("test_accuracy", test_accuracy)
+
+            if model_name == "SVM":
+                input_example = X_train[:1]
+                mlflow.sklearn.log_model(model, model_name, input_example=input_example)
+            elif model_name == "CNN":
+                mlflow.tensorflow.log_model(model, model_name)
+
+            progress_bar.progress(1.0)
+            status_text.text("Hoàn tất! (100%)")
+    except Exception as e:
+        st.error(f"Lỗi trong quá trình huấn luyện: {str(e)}")
+        return None, None, None, None
+
+    return model, train_accuracy, val_accuracy, test_accuracy
+
+# 📌 Xử lý ảnh tải lên
+def preprocess_uploaded_image(image, img_shape):
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    image = cv2.resize(image, img_shape)
+    image = image / 255.0
+    return image.reshape(1, -1)
+
+def show_sample_images(X, y, target_names, img_shape):
+    st.write("**🖼️ Một vài mẫu dữ liệu từ LFW**")
+    fig, axes = plt.subplots(1, 5, figsize=(15, 3))
+    unique_labels = np.unique(y)
+    for i, label in enumerate(unique_labels[:5]):
+        idx = np.where(y == label)[0][0]
+        ax = axes[i]
+        ax.imshow(X[idx].reshape(img_shape), cmap='gray')
+        ax.set_title(f"{target_names[label]}")
+        ax.axis('off')
+    st.pyplot(fig)
+
+# 📌 Giao diện Streamlit
 def create_streamlit_app():
     st.title("👤 Nhận diện khuôn mặt với LFW")
     
     tab1, tab2, tab3, tab4 = st.tabs(["📓 Lí thuyết", "📋 Huấn luyện", "🔮 Dự đoán", "⚡ MLflow"])
     
     with tab1:
-        # [Unchanged]
         algorithm = st.selectbox("Chọn thuật toán:", ["SVM", "CNN"])
         if algorithm == "SVM":
             st.write("##### Support Vector Machine (SVM)")
@@ -70,11 +167,11 @@ def create_streamlit_app():
             st.latex(r"y = \text{softmax}(W \cdot x + b)")
 
     with tab2:
+        min_faces = st.number_input("Số ảnh tối thiểu mỗi người", 10, 100, 20)
         sample_size = st.number_input("Cỡ mẫu huấn luyện", 100, 5000, 1000, step=100)
-        X, y, target_names = load_data(sample_size=sample_size)
-        img_shape = (50, 37)
+        X, y, target_names = load_data(min_faces_per_person=min_faces, sample_size=sample_size)
+        img_shape = (50, 37)  # LFW default shape with resize=0.4
         st.write(f"**Số lượng mẫu: {X.shape[0]}, Số người: {len(target_names)}**")
-        st.write(f"**Số ảnh mỗi người: {X.shape[0] // len(target_names)}**")
         show_sample_images(X, y, target_names, img_shape)
 
         test_size = st.slider("Tỷ lệ Test (%)", 5, 30, 15, step=5)
@@ -116,8 +213,9 @@ def create_streamlit_app():
                 st.write(f"🎯 Test Accuracy: {test_acc:.4f}")
 
     with tab3:
-        # [Unchanged from previous update]
         st.write("##### 🔮 Dự đoán trên ảnh tải lên")
+        
+        # Load available trained models from MLflow
         runs = mlflow.search_runs(order_by=["start_time desc"])
         if not runs.empty:
             runs["model_custom_name"] = runs["tags.mlflow.runName"]
@@ -129,6 +227,8 @@ def create_streamlit_app():
             selected_model_name = st.selectbox("📝 Chọn mô hình đã huấn luyện:", available_models)
             selected_run = runs[runs["model_custom_name"] == selected_model_name].iloc[0]
             run_id = selected_run["run_id"]
+            
+            # Load the model from MLflow
             model_type = selected_run["params.model_name"]
             model_uri = f"runs:/{run_id}/{model_type}"
             try:
@@ -144,7 +244,8 @@ def create_streamlit_app():
             st.warning("⚠️ Không có mô hình nào được lưu trong MLflow.")
             model = None
 
-        img_shape = (50, 37)
+        # Upload image for prediction
+        img_shape = (50, 37)  # LFW default shape with resize=0.4
         uploaded_file = st.file_uploader("📤 Tải ảnh khuôn mặt (PNG, JPG)", type=["png", "jpg", "jpeg"])
         
         if uploaded_file is not None and model is not None:
@@ -170,7 +271,6 @@ def create_streamlit_app():
             st.error("❌ Vui lòng chọn một mô hình hợp lệ trước khi dự đoán.")
 
     with tab4:
-        # [Unchanged]
         st.write("##### 📊 MLflow Tracking")
         runs = mlflow.search_runs(order_by=["start_time desc"])
         if not runs.empty:
