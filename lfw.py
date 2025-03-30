@@ -16,13 +16,16 @@ import time
 
 # 📌 Tải và xử lý dữ liệu LFW từ OpenML
 @st.cache_data
-def load_data(min_faces_per_person=20, sample_size=None):
+def load_data(min_faces_per_person=10, sample_size=None):  # Adjusted default to 10
     lfw = fetch_lfw_people(min_faces_per_person=min_faces_per_person, resize=0.4, color=False)
     X, y = lfw.data, lfw.target
     target_names = lfw.target_names
-    X = X / 255.0  # Normalize pixel values
-    if sample_size is not None and sample_size < len(X):
-        X, _, y, _ = train_test_split(X, y, train_size=sample_size, random_state=42)
+    X = X / 255.0
+    if sample_size is not None:
+        if sample_size <= len(X):
+            X, _, y, _ = train_test_split(X, y, train_size=sample_size, random_state=42)
+        else:
+            st.warning(f"Yêu cầu {sample_size} mẫu, nhưng chỉ có {len(X)} mẫu khả dụng. Sử dụng toàn bộ dữ liệu.")
     return X, y, target_names
 
 # 📌 Chia dữ liệu thành train, validation, và test
@@ -34,7 +37,7 @@ def split_data(X, y, train_size=0.7, val_size=0.15, test_size=0.15, random_state
     X_train, X_val, y_train, y_val = train_test_split(
         X_train, y_train, test_size=val_size / (train_size + val_size), random_state=random_state
     )
-    return X_train, X_val, X_test, y_train, y_val, y_test
+    return X_train, X  X_val, X_test, y_train, y_val, y_test
 
 # 📌 Huấn luyện mô hình với thanh tiến trình
 def train_model(custom_model_name, model_name, params, X_train, X_val, X_test, y_train, y_val, y_test, img_shape):
@@ -50,7 +53,7 @@ def train_model(custom_model_name, model_name, params, X_train, X_val, X_test, y
         )
     elif model_name == "CNN":
         model = models.Sequential([
-            layers.Input(shape=(*img_shape, 1)),  # Input shape as (50, 37, 1)
+            layers.Input(shape=(*img_shape, 1)),
             layers.Conv2D(32, (3, 3), activation='relu', padding='same'),
             layers.MaxPooling2D((2, 2)),
             layers.Conv2D(64, (3, 3), activation='relu', padding='same'),
@@ -167,10 +170,10 @@ def create_streamlit_app():
             st.latex(r"y = \text{softmax}(W \cdot x + b)")
 
     with tab2:
-        min_faces = st.number_input("Số ảnh tối thiểu mỗi người", 10, 100, 20)
-        sample_size = st.number_input("Cỡ mẫu huấn luyện", 100, 5000, 1000, step=100)
+        min_faces = st.number_input("Số ảnh tối thiểu mỗi người", 1, 100, 10)  # Adjusted min to 1
+        sample_size = st.number_input("Cỡ mẫu huấn luyện", 100, 10000, 5000, step=100)
         X, y, target_names = load_data(min_faces_per_person=min_faces, sample_size=sample_size)
-        img_shape = (50, 37)  # LFW default shape with resize=0.4
+        img_shape = (50, 37)
         st.write(f"**Số lượng mẫu: {X.shape[0]}, Số người: {len(target_names)}**")
         show_sample_images(X, y, target_names, img_shape)
 
@@ -215,7 +218,6 @@ def create_streamlit_app():
     with tab3:
         st.write("##### 🔮 Dự đoán trên ảnh tải lên")
         
-        # Load available trained models from MLflow
         runs = mlflow.search_runs(order_by=["start_time desc"])
         if not runs.empty:
             runs["model_custom_name"] = runs["tags.mlflow.runName"]
@@ -228,7 +230,6 @@ def create_streamlit_app():
             selected_run = runs[runs["model_custom_name"] == selected_model_name].iloc[0]
             run_id = selected_run["run_id"]
             
-            # Load the model from MLflow
             model_type = selected_run["params.model_name"]
             model_uri = f"runs:/{run_id}/{model_type}"
             try:
@@ -244,8 +245,7 @@ def create_streamlit_app():
             st.warning("⚠️ Không có mô hình nào được lưu trong MLflow.")
             model = None
 
-        # Upload image for prediction
-        img_shape = (50, 37)  # LFW default shape with resize=0.4
+        img_shape = (50, 37)
         uploaded_file = st.file_uploader("📤 Tải ảnh khuôn mặt (PNG, JPG)", type=["png", "jpg", "jpeg"])
         
         if uploaded_file is not None and model is not None:
