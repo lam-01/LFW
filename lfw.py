@@ -16,7 +16,7 @@ import time
 
 # 📌 Tải và xử lý dữ liệu LFW từ OpenML
 @st.cache_data
-def load_data(min_faces_per_person=10, sample_size=None):  # Adjusted default to 10
+def load_data(min_faces_per_person=10, sample_size=None):
     lfw = fetch_lfw_people(min_faces_per_person=min_faces_per_person, resize=0.4, color=False)
     X, y = lfw.data, lfw.target
     target_names = lfw.target_names
@@ -37,7 +37,7 @@ def split_data(X, y, train_size=0.7, val_size=0.15, test_size=0.15, random_state
     X_train, X_val, y_train, y_val = train_test_split(
         X_train, y_train, test_size=val_size / (train_size + val_size), random_state=random_state
     )
-    return X_train, X  X_val, X_test, y_train, y_val, y_test
+    return X_train, X_val, X_test, y_train, y_val, y_test  # Fixed syntax here
 
 # 📌 Huấn luyện mô hình với thanh tiến trình
 def train_model(custom_model_name, model_name, params, X_train, X_val, X_test, y_train, y_val, y_test, img_shape):
@@ -170,7 +170,7 @@ def create_streamlit_app():
             st.latex(r"y = \text{softmax}(W \cdot x + b)")
 
     with tab2:
-        min_faces = st.number_input("Số ảnh tối thiểu mỗi người", 1, 100, 10)  # Adjusted min to 1
+        min_faces = st.number_input("Số ảnh tối thiểu mỗi người", 1, 100, 10)
         sample_size = st.number_input("Cỡ mẫu huấn luyện", 100, 10000, 5000, step=100)
         X, y, target_names = load_data(min_faces_per_person=min_faces, sample_size=sample_size)
         img_shape = (50, 37)
