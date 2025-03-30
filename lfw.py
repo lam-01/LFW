@@ -16,7 +16,7 @@ import time
 
 # 📌 Tải và xử lý dữ liệu LFW từ OpenML
 @st.cache_data
-def load_data(min_faces_per_person=10, sample_size=None):
+def load_data(min_faces_per_person=1, sample_size=None):  # Lowered to 1
     lfw = fetch_lfw_people(min_faces_per_person=min_faces_per_person, resize=0.4, color=False)
     X, y = lfw.data, lfw.target
     target_names = lfw.target_names
@@ -37,7 +37,7 @@ def split_data(X, y, train_size=0.7, val_size=0.15, test_size=0.15, random_state
     X_train, X_val, y_train, y_val = train_test_split(
         X_train, y_train, test_size=val_size / (train_size + val_size), random_state=random_state
     )
-    return X_train, X_val, X_test, y_train, y_val, y_test  # Fixed syntax here
+    return X_train, X_val, X_test, y_train, y_val, y_test
 
 # 📌 Huấn luyện mô hình với thanh tiến trình
 def train_model(custom_model_name, model_name, params, X_train, X_val, X_test, y_train, y_val, y_test, img_shape):
@@ -49,18 +49,23 @@ def train_model(custom_model_name, model_name, params, X_train, X_val, X_test, y
         model = SVC(
             kernel=params["kernel"],
             C=params["C"],
-            probability=True
+            probability=True,
+            class_weight='balanced'  # Handle class imbalance
         )
     elif model_name == "CNN":
         model = models.Sequential([
             layers.Input(shape=(*img_shape, 1)),
             layers.Conv2D(32, (3, 3), activation='relu', padding='same'),
+            layers.BatchNormalization(),
             layers.MaxPooling2D((2, 2)),
             layers.Conv2D(64, (3, 3), activation='relu', padding='same'),
+            layers.BatchNormalization(),
             layers.MaxPooling2D((2, 2)),
-            layers.Conv2D(64, (3, 3), activation='relu', padding='same'),
+            layers.Conv2D(128, (3, 3), activation='relu', padding='same'),
+            layers.BatchNormalization(),
+            layers.MaxPooling2D((2, 2)),
             layers.Flatten(),
-            layers.Dense(128, activation='relu'),
+            layers.Dense(256, activation='relu'),
             layers.Dropout(0.5),
             layers.Dense(len(np.unique(y_train)), activation='softmax')
         ])
@@ -170,7 +175,7 @@ def create_streamlit_app():
             st.latex(r"y = \text{softmax}(W \cdot x + b)")
 
     with tab2:
-        min_faces = st.number_input("Số ảnh tối thiểu mỗi người", 1, 100, 10)
+        min_faces = st.number_input("Số ảnh tối thiểu mỗi người", 1, 100, 1)  # Default to 1
         sample_size = st.number_input("Cỡ mẫu huấn luyện", 100, 10000, 5000, step=100)
         X, y, target_names = load_data(min_faces_per_person=min_faces, sample_size=sample_size)
         img_shape = (50, 37)
@@ -202,7 +207,7 @@ def create_streamlit_app():
             params["kernel"] = st.selectbox("⚙️ Kernel", ["linear", "rbf", "poly", "sigmoid"])
             params["C"] = st.slider("🔧 Tham số C", 0.1, 10.0, 1.0)
         elif model_name == "CNN":
-            params["epochs"] = st.slider("🔄 Số epoch", 5, 50, 10)
+            params["epochs"] = st.slider("🔄 Số epoch", 5, 50, 20)  # Increased default to 20
 
         if st.button("🚀 Huấn luyện"):
             with st.spinner("🔄 Đang huấn luyện..."):
