@@ -219,7 +219,7 @@ def create_streamlit_app():
                 st.write(f"🎯 Validation Accuracy: {val_acc:.4f}")
                 st.write(f"🎯 Test Accuracy: {test_acc:.4f}")
 
-   with tab3:
+    with tab3:
         option = st.radio("🖼️ Chọn phương thức nhập:", ["📂 Tải ảnh lên", "✏️ Vẽ ảnh"])
         img_shape = (50, 37)
         if option == "📂 Tải ảnh lên":
