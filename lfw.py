@@ -7,8 +7,10 @@ import cv2
 from sklearn.datasets import fetch_lfw_people
 from sklearn.model_selection import train_test_split
 from sklearn.svm import SVC
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, precision_score, recall_score
 from tensorflow.keras import layers, models
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -17,11 +19,11 @@ import time
 
 # 📌 Tải và xử lý dữ liệu LFW từ OpenML
 @st.cache_data
-def load_data(min_faces_per_person=1, sample_size=None):  # Lowered to 1
-    lfw = fetch_lfw_people(min_faces_per_person=min_faces_per_person, resize=0.4, color=False)
+def load_data(min_faces_per_person=10, sample_size=None):
+    lfw = fetch_lfw_people(min_faces_per_person=min_faces_per_person, resize=0.8, color=False)
     X, y = lfw.data, lfw.target
     target_names = lfw.target_names
-    X = X / 255.0
+    X = X / 255.0  # Normalize
     if sample_size is not None:
         if sample_size <= len(X):
             X, _, y, _ = train_test_split(X, y, train_size=sample_size, random_state=42)
@@ -51,7 +53,7 @@ def train_model(custom_model_name, model_name, params, X_train, X_val, X_test, y
             kernel=params["kernel"],
             C=params["C"],
             probability=True,
-            class_weight='balanced'  # Handle class imbalance
+            class_weight='balanced'
         )
     elif model_name == "CNN":
         model = models.Sequential([
@@ -64,15 +66,19 @@ def train_model(custom_model_name, model_name, params, X_train, X_val, X_test, y
             layers.MaxPooling2D((2, 2)),
             layers.Conv2D(128, (3, 3), activation='relu', padding='same'),
             layers.BatchNormalization(),
+            layers.Conv2D(256, (3, 3), activation='relu', padding='same'),
+            layers.BatchNormalization(),
             layers.MaxPooling2D((2, 2)),
             layers.Flatten(),
-            layers.Dense(256, activation='relu'),
+            layers.Dense(512, activation='relu'),
             layers.Dropout(0.5),
             layers.Dense(len(np.unique(y_train)), activation='softmax')
         ])
-        learning_rate = params.get("learning_rate", 0.001)
-        model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate), 
-                      loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+        model.compile(
+            optimizer=Adam(learning_rate=params.get("learning_rate", 0.001)),
+            loss='sparse_categorical_crossentropy',
+            metrics=['accuracy']
+        )
     else:
         raise ValueError("Invalid model selected!")
 
@@ -89,19 +95,24 @@ def train_model(custom_model_name, model_name, params, X_train, X_val, X_test, y
                 X_val_reshaped = X_val.reshape((-1, *img_shape, 1))
                 X_test_reshaped = X_test.reshape((-1, *img_shape, 1))
                 
-                # Tạo ImageDataGenerator cho tăng cường dữ liệu
+                # Data augmentation
                 datagen = ImageDataGenerator(
-                    rotation_range=10,
-                    width_shift_range=0.1,
-                    height_shift_range=0.1,
-                    zoom_range=0.1
+                    rotation_range=20,
+                    width_shift_range=0.2,
+                    height_shift_range=0.2,
+                    horizontal_flip=True
                 )
+                # Callbacks
+                early_stopping = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
+                lr_scheduler = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=5)
                 
-                # Sử dụng datagen.flow để tạo dữ liệu tăng cường
-                train_generator = datagen.flow(X_train_reshaped, y_train, batch_size=32)
-                
-                model.fit(train_generator, epochs=params["epochs"], 
-                          validation_data=(X_val_reshaped, y_val), verbose=0)
+                model.fit(
+                    datagen.flow(X_train_reshaped, y_train, batch_size=32),
+                    epochs=params["epochs"],
+                    validation_data=(X_val_reshaped, y_val),
+                    callbacks=[early_stopping, lr_scheduler],
+                    verbose=1
+                )
 
             train_end_time = time.time()
             progress_bar.progress(0.5)
@@ -122,13 +133,17 @@ def train_model(custom_model_name, model_name, params, X_train, X_val, X_test, y
             train_accuracy = accuracy_score(y_train, y_train_pred)
             val_accuracy = accuracy_score(y_val, y_val_pred)
             test_accuracy = accuracy_score(y_test, y_test_pred)
+            train_precision = precision_score(y_train, y_train_pred, average='weighted', zero_division=0)
+            val_recall = recall_score(y_val, y_val_pred, average='weighted', zero_division=0)
 
             status_text.text("Đang ghi log vào MLflow... (90%)")
             mlflow.log_param("model_name", model_name)
             mlflow.log_params(params)
             mlflow.log_metric("train_accuracy", train_accuracy)
-            mlflow.log_metric("val_accuracy", val_accuracy)
+NEG            mlflow.log_metric("val_accuracy", val_accuracy)
             mlflow.log_metric("test_accuracy", test_accuracy)
+            mlflow.log_metric("train_precision", train_precision)
+            mlflow.log_metric("val_recall", val_recall)
 
             if model_name == "SVM":
                 input_example = X_train[:1]
@@ -190,10 +205,10 @@ def create_streamlit_app():
             st.latex(r"y = \text{softmax}(W \cdot x + b)")
 
     with tab2:
-        min_faces = st.number_input("Số ảnh tối thiểu mỗi người", 1, 100, 1)  # Default to 1
-        sample_size = st.number_input("Cỡ mẫu huấn luyện", 100, 10000, 5000, step=100)
+        min_faces = st.number_input("Số ảnh tối thiểu mỗi người", 10, 100, 10)
+        sample_size = st.number_input("Cỡ mẫu huấn luyện", 100, 10000, 2000, step=100)
         X, y, target_names = load_data(min_faces_per_person=min_faces, sample_size=sample_size)
-        img_shape = (50, 37)
+        img_shape = (100, 74)  # Updated for resize=0.8
         st.write(f"**Số lượng mẫu: {X.shape[0]}, Số người: {len(target_names)}**")
         show_sample_images(X, y, target_names, img_shape)
 
@@ -220,10 +235,10 @@ def create_streamlit_app():
 
         if model_name == "SVM":
             params["kernel"] = st.selectbox("⚙️ Kernel", ["linear", "rbf", "poly", "sigmoid"])
-            params["C"] = st.slider("🔧 Tham số C", 0.1, 10.0, 1.0)
+            params["C"] = st.slider("🔧 Tham số C", 0.1, 100.0, 10.0)
         elif model_name == "CNN":
-            params["epochs"] = st.slider("🔄 Số epoch", 5, 50, 20)  # Increased default to 20
-            params["learning_rate"] = st.slider("🔧 Tốc độ học", 0.0001, 0.01, 0.001)
+            params["epochs"] = st.slider("🔄 Số epoch", 10, 100, 50)
+            params["learning_rate"] = st.slider("🔧 Learning Rate", 0.0001, 0.01, 0.001)
 
         if st.button("🚀 Huấn luyện"):
             with st.spinner("🔄 Đang huấn luyện..."):
@@ -266,7 +281,7 @@ def create_streamlit_app():
             st.warning("⚠️ Không có mô hình nào được lưu trong MLflow.")
             model = None
 
-        img_shape = (50, 37)
+        img_shape = (100, 74)  # Updated for resize=0.8
         uploaded_file = st.file_uploader("📤 Tải ảnh khuôn mặt (PNG, JPG)", type=["png", "jpg", "jpeg"])
         
         if uploaded_file is not None and model is not None:
@@ -300,7 +315,8 @@ def create_streamlit_app():
             filtered_runs = runs[runs["model_custom_name"].str.contains(search_model_name, case=False, na=False)] if search_model_name else runs
             if not filtered_runs.empty:
                 st.dataframe(filtered_runs[["model_custom_name", "params.model_name", "metrics.train_accuracy", 
-                                           "metrics.val_accuracy", "metrics.test_accuracy"]])
+                                           "metrics.val_accuracy", "metrics.test_accuracy", "metrics.train_precision", 
+                                           "metrics.val_recall"]])
                 selected_model = st.selectbox("📝 Chọn mô hình để xem chi tiết:", filtered_runs["model_custom_name"].tolist())
                 run_details = mlflow.get_run(filtered_runs[filtered_runs["model_custom_name"] == selected_model].iloc[0]["run_id"])
                 st.write(f"##### 🔍 Chi tiết mô hình: `{selected_model}`")
