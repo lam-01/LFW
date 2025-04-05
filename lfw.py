@@ -140,7 +140,7 @@ def train_model(custom_model_name, model_name, params, X_train, X_val, X_test, y
             mlflow.log_param("model_name", model_name)
             mlflow.log_params(params)
             mlflow.log_metric("train_accuracy", train_accuracy)
-NEG            mlflow.log_metric("val_accuracy", val_accuracy)
+            mlflow.log_metric("val_accuracy", val_accuracy)
             mlflow.log_metric("test_accuracy", test_accuracy)
             mlflow.log_metric("train_precision", train_precision)
             mlflow.log_metric("val_recall", val_recall)
