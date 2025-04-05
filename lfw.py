@@ -9,6 +9,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.svm import SVC
 from sklearn.metrics import accuracy_score
 from tensorflow.keras import layers, models
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -69,7 +70,9 @@ def train_model(custom_model_name, model_name, params, X_train, X_val, X_test, y
             layers.Dropout(0.5),
             layers.Dense(len(np.unique(y_train)), activation='softmax')
         ])
-        model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+        learning_rate = params.get("learning_rate", 0.001)
+        model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate), 
+                      loss='sparse_categorical_crossentropy', metrics=['accuracy'])
     else:
         raise ValueError("Invalid model selected!")
 
@@ -85,7 +88,19 @@ def train_model(custom_model_name, model_name, params, X_train, X_val, X_test, y
                 X_train_reshaped = X_train.reshape((-1, *img_shape, 1))
                 X_val_reshaped = X_val.reshape((-1, *img_shape, 1))
                 X_test_reshaped = X_test.reshape((-1, *img_shape, 1))
-                model.fit(X_train_reshaped, y_train, epochs=params["epochs"], batch_size=32, 
+                
+                # Tạo ImageDataGenerator cho tăng cường dữ liệu
+                datagen = ImageDataGenerator(
+                    rotation_range=10,
+                    width_shift_range=0.1,
+                    height_shift_range=0.1,
+                    zoom_range=0.1
+                )
+                
+                # Sử dụng datagen.flow để tạo dữ liệu tăng cường
+                train_generator = datagen.flow(X_train_reshaped, y_train, batch_size=32)
+                
+                model.fit(train_generator, epochs=params["epochs"], 
                           validation_data=(X_val_reshaped, y_val), verbose=0)
 
             train_end_time = time.time()
@@ -208,6 +223,7 @@ def create_streamlit_app():
             params["C"] = st.slider("🔧 Tham số C", 0.1, 10.0, 1.0)
         elif model_name == "CNN":
             params["epochs"] = st.slider("🔄 Số epoch", 5, 50, 20)  # Increased default to 20
+            params["learning_rate"] = st.slider("🔧 Tốc độ học", 0.0001, 0.01, 0.001)
 
         if st.button("🚀 Huấn luyện"):
             with st.spinner("🔄 Đang huấn luyện..."):
