@@ -24,12 +24,19 @@ def load_data(min_faces_per_person=10, sample_size=None):
     X, y = lfw.data, lfw.target
     target_names = lfw.target_names
     X = X / 255.0  # Normalize
+    
+    # Tính img_shape từ dữ liệu thực tế
+    n_features = X.shape[1]
+    height = int(lfw.images.shape[1])
+    width = int(lfw.images.shape[2])
+    img_shape = (height, width)
+    
     if sample_size is not None:
         if sample_size <= len(X):
             X, _, y, _ = train_test_split(X, y, train_size=sample_size, random_state=42)
         else:
             st.warning(f"Yêu cầu {sample_size} mẫu, nhưng chỉ có {len(X)} mẫu khả dụng. Sử dụng toàn bộ dữ liệu.")
-    return X, y, target_names
+    return X, y, target_names, img_shape
 
 # 📌 Chia dữ liệu thành train, validation, và test
 @st.cache_data
@@ -49,12 +56,7 @@ def train_model(custom_model_name, model_name, params, X_train, X_val, X_test, y
     status_text.text("Đang khởi tạo mô hình... (0%)")
 
     if model_name == "SVM":
-        model = SVC(
-            kernel=params["kernel"],
-            C=params["C"],
-            probability=True,
-            class_weight='balanced'
-        )
+        model = SVC(kernel=params["kernel"], C=params["C"], probability=True, class_weight='balanced')
     elif model_name == "CNN":
         model = models.Sequential([
             layers.Input(shape=(*img_shape, 1)),
@@ -95,14 +97,7 @@ def train_model(custom_model_name, model_name, params, X_train, X_val, X_test, y
                 X_val_reshaped = X_val.reshape((-1, *img_shape, 1))
                 X_test_reshaped = X_test.reshape((-1, *img_shape, 1))
                 
-                # Data augmentation
-                datagen = ImageDataGenerator(
-                    rotation_range=20,
-                    width_shift_range=0.2,
-                    height_shift_range=0.2,
-                    horizontal_flip=True
-                )
-                # Callbacks
+                datagen = ImageDataGenerator(rotation_range=20, width_shift_range=0.2, height_shift_range=0.2, horizontal_flip=True)
                 early_stopping = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
                 lr_scheduler = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=5)
                 
@@ -170,6 +165,13 @@ def show_sample_images(X, y, target_names, img_shape):
     st.write("**🖼️ Một vài mẫu dữ liệu từ LFW**")
     fig, axes = plt.subplots(1, 5, figsize=(15, 3))
     unique_labels = np.unique(y)
+    
+    st.write(f"Debug - Kích thước mỗi mẫu: {X[0].shape}, img_shape: {img_shape}")
+    expected_size = img_shape[0] * img_shape[1]
+    if X.shape[1] != expected_size:
+        st.error(f"Lỗi: Kích thước dữ liệu ({X.shape[1]}) không khớp với img_shape ({expected_size})!")
+        return
+    
     for i, label in enumerate(unique_labels[:5]):
         idx = np.where(y == label)[0][0]
         ax = axes[i]
@@ -207,9 +209,8 @@ def create_streamlit_app():
     with tab2:
         min_faces = st.number_input("Số ảnh tối thiểu mỗi người", 10, 100, 10)
         sample_size = st.number_input("Cỡ mẫu huấn luyện", 100, 10000, 2000, step=100)
-        X, y, target_names = load_data(min_faces_per_person=min_faces, sample_size=sample_size)
-        img_shape = (100, 74)  # Updated for resize=0.8
-        st.write(f"**Số lượng mẫu: {X.shape[0]}, Số người: {len(target_names)}**")
+        X, y, target_names, img_shape = load_data(min_faces_per_person=min_faces, sample_size=sample_size)
+        st.write(f"**Số lượng mẫu: {X.shape[0]}, Số người: {len(target_names)}, Kích thước ảnh: {img_shape}**")
         show_sample_images(X, y, target_names, img_shape)
 
         test_size = st.slider("Tỷ lệ Test (%)", 5, 30, 15, step=5)
@@ -281,7 +282,6 @@ def create_streamlit_app():
             st.warning("⚠️ Không có mô hình nào được lưu trong MLflow.")
             model = None
 
-        img_shape = (100, 74)  # Updated for resize=0.8
         uploaded_file = st.file_uploader("📤 Tải ảnh khuôn mặt (PNG, JPG)", type=["png", "jpg", "jpeg"])
         
         if uploaded_file is not None and model is not None:
