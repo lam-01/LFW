@@ -3,6 +3,7 @@ import mlflow
 import mlflow.sklearn
 import numpy as np
 import cv2
+import os
 from sklearn.svm import SVC
 from sklearn.neural_network import MLPClassifier
 from sklearn.model_selection import train_test_split, cross_val_score, KFold
@@ -11,8 +12,6 @@ from streamlit_drawable_canvas import st_canvas
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle, Rectangle
-import os
-from glob import glob
 
 # Khởi tạo session state
 if 'model_svm' not in st.session_state:
@@ -32,24 +31,40 @@ if 'custom_model_name' not in st.session_state:
 if 'trained_models' not in st.session_state:
     st.session_state.trained_models = {}
 
-# Tải dữ liệu mèo/chó từ thư mục
+# Tải dữ liệu từ thư mục
 @st.cache_data
-def load_data(data_dir, n_samples=None):
-    cat_images = glob(os.path.join(data_dir, "cats", "*.jpg")) + glob(os.path.join(data_dir, "cats", "*.png"))
-    dog_images = glob(os.path.join(data_dir, "dogs", "*.jpg")) + glob(os.path.join(data_dir, "dogs", "*.png"))
-    images = cat_images + dog_images
-    labels = [0] * len(cat_images) + [1] * len(dog_images)
+def load_data(dataset_path, n_samples=None):
+    cat_path = os.path.join(dataset_path, "cats")
+    dog_path = os.path.join(dataset_path, "dogs")
     
-    X, y = [], []
-    for img_path, label in zip(images[:n_samples], labels[:n_samples]):
+    X = []
+    y = []
+    
+    # Tải ảnh mèo (nhãn 0)
+    for img_file in os.listdir(cat_path)[:250]:  # Giới hạn 250 mỗi lớp để đơn giản hóa
+        img_path = os.path.join(cat_path, img_file)
+        img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)  # Đọc ảnh xám
+        img = cv2.resize(img, (64, 64))  # Giảm kích thước để xử lý nhanh hơn
+        X.append(img.flatten())
+        y.append(0)
+    
+    # Tải ảnh chó (nhãn 1)
+    for img_file in os.listdir(dog_path)[:250]:
+        img_path = os.path.join(dog_path, img_file)
         img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
-        if img is not None:
-            img = cv2.resize(img, (64, 64)) / 255.0
-            X.append(img.flatten())
-            y.append(label)
-    return np.array(X), np.array(y)
+        img = cv2.resize(img, (64, 64))
+        X.append(img.flatten())
+        y.append(1)
+    
+    X = np.array(X) / 255.0  # Chuẩn hóa
+    y = np.array(y)
+    
+    if n_samples:
+        X, y = X[:n_samples], y[:n_samples]
+    
+    return X, y
 
-# Chia dữ liệu thành train, validation, test
+# Chia dữ liệu
 @st.cache_data
 def split_data(X, y, train_size=0.7, val_size=0.15, test_size=0.15, random_state=42):
     X_train, X_test, y_train, y_test = train_test_split(
@@ -68,8 +83,8 @@ def visualize_neural_network_prediction(model, input_image, predicted_label):
     elif isinstance(hidden_layer_sizes, tuple):
         hidden_layer_sizes = list(hidden_layer_sizes)
 
-    input_layer_size = 64 * 64  # Ảnh 64x64
-    output_layer_size = 2  # Mèo hoặc chó
+    input_layer_size = 64*64
+    output_layer_size = 2
     layer_sizes = [input_layer_size] + hidden_layer_sizes + [output_layer_size]
     num_layers = len(layer_sizes)
 
@@ -133,7 +148,7 @@ def visualize_neural_network_prediction(model, input_image, predicted_label):
 # Huấn luyện SVM
 @st.cache_resource
 def train_svm(custom_model_name, params, X_train, X_val, X_test, y_train, y_val, y_test, cv_folds):
-    model = SVC(kernel=params["kernel"], C=params["C"], probability=True, random_state=42)
+    model = SVC(kernel=params["kernel"], C=params["C"], random_state=42)
     with mlflow.start_run(run_name=custom_model_name):
         model.fit(X_train, y_train)
         train_accuracy = accuracy_score(y_train, model.predict(X_train))
@@ -199,11 +214,11 @@ def preprocess_canvas_image(canvas):
 # Hiển thị mẫu dữ liệu
 def show_sample_images(X, y):
     st.write("**🖼️ Một vài mẫu dữ liệu**")
-    fig, axes = plt.subplots(1, 5, figsize=(15, 3))
+    fig, axes = plt.subplots(1, 4, figsize=(10, 3))
     for i, ax in enumerate(axes):
         idx = np.where(y == i % 2)[0][i // 2]
         ax.imshow(X[idx].reshape(64, 64), cmap='gray')
-        ax.set_title(f"{'Mèo' if y[idx] == 0 else 'Chó'}")
+        ax.set_title(f"{'Mèo' if i % 2 == 0 else 'Chó'}")
         ax.axis('off')
     st.pyplot(fig)
 
@@ -216,80 +231,63 @@ def create_streamlit_app():
     with tab1:
         st.write("##### SVM và Neural Network")
         st.write("SVM (Support Vector Machine) và Neural Network là hai phương pháp học máy phổ biến để phân loại dữ liệu, chẳng hạn như phân biệt ảnh mèo và chó.")
-        st.write("**SVM**: Tìm siêu phẳng tối ưu để phân tách các lớp dữ liệu. Phù hợp với dữ liệu tuyến tính và phi tuyến tính (với kernel như 'rbf').")
+        st.write("**SVM**: Tìm siêu phẳng tối ưu để phân tách các lớp dữ liệu. Phù hợp với dữ liệu tuyến tính và phi tuyến tính (với kernel).")
         st.write("**Neural Network**: Mô phỏng mạng nơ-ron sinh học, học các đặc trưng phức tạp qua các tầng ẩn.")
-        st.write("##### Cấu trúc Neural Network")
-        st.write("- **Input Layer**: Dữ liệu ảnh (64x64 pixel).")
-        st.write("- **Hidden Layers**: Xử lý đặc trưng.")
-        st.write("- **Output Layer**: 2 nơ-ron (Mèo hoặc Chó).")
-        st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/9/99/Neural_network_example.svg/1200px-Neural_network_example.svg.png", caption="Cấu trúc mạng Neural Network", width=500)
+        st.write("Tập dữ liệu: 1000 ảnh (500 mèo, 500 chó), độ phân giải 512x512, định dạng .png, được tạo bởi Stable Diffusion 1.5.")
 
     with tab2:
-        data_dir = st.text_input("Đường dẫn thư mục dữ liệu (có thư mục con 'cats' và 'dogs'):", "path_to_data")
-        if not os.path.exists(data_dir):
-            st.error("Đường dẫn không tồn tại! Vui lòng nhập đúng đường dẫn.")
+        dataset_path = st.text_input("Đường dẫn đến thư mục dataset:", "dataset/")
+        n_samples = st.number_input("Số lượng mẫu", min_value=100, max_value=500, value=500, step=50)
+        X, y = load_data(dataset_path, n_samples=n_samples)
+        st.write(f"**Số lượng mẫu được chọn: {X.shape[0]}**")
+        show_sample_images(X, y)
+
+        test_size = st.slider("Tỷ lệ Test (%)", min_value=5, max_value=30, value=15, step=5)
+        val_size = st.slider("Tỷ lệ Validation (%)", min_value=5, max_value=30, value=15, step=5)
+        train_size = 100 - test_size - val_size
+        if train_size <= 0:
+            st.error("Tỷ lệ không hợp lệ! Tổng Train + Val + Test phải = 100%.")
         else:
-            n_samples = st.number_input("Số lượng mẫu", min_value=10, max_value=10000, value=100, step=10)
-            X, y = load_data(data_dir, n_samples=n_samples)
-            st.write(f"**Số lượng mẫu được chọn: {X.shape[0]}**")
-            show_sample_images(X, y)
+            X_train, X_val, X_test, y_train, y_val, y_test = split_data(X, y, train_size=train_size/100, val_size=val_size/100, test_size=test_size/100)
+            st.session_state.data_split = (X_train, X_val, X_test, y_train, y_val, y_test)
 
-            test_size = st.slider("Tỷ lệ Test (%)", min_value=5, max_value=30, value=15, step=5)
-            val_size = st.slider("Tỷ lệ Validation (%)", min_value=5, max_value=30, value=15, step=5)
-            train_size = 100 - test_size - val_size
-            if train_size <= 0:
-                st.error("Tỷ lệ không hợp lệ! Tổng Train + Val + Test phải = 100%.")
+            st.write("**🚀 Huấn luyện mô hình**")
+            model_type = st.selectbox("Chọn loại mô hình", ["SVM", "Neural Network"])
+            st.session_state.custom_model_name = st.text_input("Tên mô hình để lưu vào MLflow:")
+
+            if model_type == "SVM":
+                params = {
+                    "kernel": st.selectbox("Kernel", ["linear", "rbf"]),
+                    "C": st.slider("C (Regularization)", 0.1, 10.0, 1.0)
+                }
+                st.session_state.params_svm = params
             else:
-                X_train, X_val, X_test, y_train, y_val, y_test = split_data(X, y, train_size=train_size/100, val_size=val_size/100, test_size=test_size/100)
-                st.session_state.data_split = (X_train, X_val, X_test, y_train, y_val, y_test)
+                params = {
+                    "num_hidden_layers": st.slider("Số lớp ẩn", 1, 2, 1),
+                    "neurons_per_layer": st.slider("Số neuron mỗi lớp", 20, 100, 50),
+                    "epochs": st.slider("Epochs", 5, 50, 10),
+                    "activation": st.selectbox("Hàm kích hoạt", ["relu", "tanh", "logistic"]),
+                    "learning_rate": st.slider("Tốc độ học", 0.0001, 0.1, 0.001)
+                }
+                st.session_state.params_nn = params
 
-                data_ratios = pd.DataFrame({
-                    "Tập dữ liệu": ["Train", "Validation", "Test"],
-                    "Tỷ lệ (%)": [train_size, val_size, test_size],
-                    "Số lượng mẫu": [len(X_train), len(X_val), len(X_test)]
-                })
-                st.table(data_ratios)
-
-                st.write("**🚀 Huấn luyện mô hình**")
-                model_type = st.selectbox("Chọn loại mô hình", ["SVM", "Neural Network"])
-                st.session_state.custom_model_name = st.text_input("Tên mô hình để lưu vào MLflow:", st.session_state.custom_model_name)
-
-                if model_type == "SVM":
-                    params = {
-                        "kernel": st.selectbox("Kernel", ["linear", "rbf"]),
-                        "C": st.slider("C (Regularization)", 0.1, 10.0, 1.0)
-                    }
-                    st.session_state.params_svm = params
+            if st.button("🚀 Huấn luyện"):
+                if not st.session_state.custom_model_name:
+                    st.error("Vui lòng nhập tên mô hình!")
                 else:
-                    params = {
-                        "num_hidden_layers": st.slider("Số lớp ẩn", 1, 2, 1),
-                        "neurons_per_layer": st.slider("Số neuron mỗi lớp", 20, 100, 50),
-                        "epochs": st.slider("Epochs", 5, 50, 10),
-                        "activation": st.selectbox("Hàm kích hoạt", ["relu", "tanh", "logistic"]),
-                        "learning_rate": st.slider("Tốc độ học", 0.0001, 0.1, 0.001)
-                    }
-                    st.session_state.params_nn = params
-
-                st.session_state.cv_folds = st.slider("Số fold Cross-Validation", 2, 5, 3)
-
-                if st.button("🚀 Huấn luyện"):
-                    if not st.session_state.custom_model_name:
-                        st.error("Vui lòng nhập tên mô hình!")
+                    X_train, X_val, X_test, y_train, y_val, y_test = st.session_state.data_split
+                    if model_type == "SVM":
+                        result = train_svm(st.session_state.custom_model_name, st.session_state.params_svm, X_train, X_val, X_test, y_train, y_val, y_test, st.session_state.cv_folds)
+                        st.session_state.model_svm = result[0]
                     else:
-                        with st.spinner("🔄 Đang huấn luyện..."):
-                            X_train, X_val, X_test, y_train, y_val, y_test = st.session_state.data_split
-                            if model_type == "SVM":
-                                result = train_svm(st.session_state.custom_model_name, st.session_state.params_svm, X_train, X_val, X_test, y_train, y_val, y_test, st.session_state.cv_folds)
-                                st.session_state.model_svm = result[0]
-                            else:
-                                result = train_nn(st.session_state.custom_model_name, st.session_state.params_nn, X_train, X_val, X_test, y_train, y_val, y_test, st.session_state.cv_folds)
-                                st.session_state.model_nn = result[0]
-                            st.session_state.trained_models[st.session_state.custom_model_name] = result[0]
-                            st.success("✅ Huấn luyện xong!")
-                            st.write(f"🎯 **Độ chính xác Train: {result[1]:.4f}**")
-                            st.write(f"🎯 **Độ chính xác Validation: {result[2]:.4f}**")
-                            st.write(f"🎯 **Độ chính xác Test: {result[3]:.4f}**")
-                            st.write(f"🎯 **Độ chính xác CV: {result[4]:.4f}**")
+                        result = train_nn(st.session_state.custom_model_name, st.session_state.params_nn, X_train, X_val, X_test, y_train, y_val, y_test, st.session_state.cv_folds)
+                        st.session_state.model_nn = result[0]
+                    st.session_state.trained_models[st.session_state.custom_model_name] = result[0]
+                    st.success("✅ Huấn luyện xong!")
+                    st.write(f"Độ chính xác Train: {result[1]:.4f}")
+                    st.write(f"Độ chính xác Validation: {result[2]:.4f}")
+                    st.write(f"Độ chính xác Test: {result[3]:.4f}")
+                    st.write(f"Độ chính xác CV: {result[4]:.4f}")
 
     with tab3:
         if not st.session_state.trained_models:
@@ -303,17 +301,15 @@ def create_streamlit_app():
             show_visualization = st.checkbox("Hiển thị biểu đồ mạng nơ-ron (chỉ cho NN)", value=True)
 
             if option == "📂 Tải ảnh lên":
-                uploaded_file = st.file_uploader("Tải ảnh mèo/chó", type=["png", "jpg", "jpeg"])
+                uploaded_file = st.file_uploader("Tải ảnh mèo/chó", type=["png"])
                 if uploaded_file:
                     image = cv2.imdecode(np.frombuffer(uploaded_file.read(), np.uint8), cv2.IMREAD_COLOR)
                     processed_image = preprocess_uploaded_image(image)
                     st.image(image, caption="Ảnh tải lên", use_column_width=True)
                     if st.button("🔮 Dự đoán"):
                         prediction = selected_model.predict(processed_image)[0]
-                        probabilities = selected_model.predict_proba(processed_image)[0]
-                        st.write(f"🎯 **Dự đoán: {'Mèo' if prediction == 0 else 'Chó'}**")
-                        st.write(f"🔢 **Độ tin cậy: {probabilities[prediction] * 100:.2f}%**")
-                        if show_visualization and isinstance(selected_model, MLPClassifier):
+                        st.write(f"🎯 Dự đoán: {'Mèo' if prediction == 0 else 'Chó'}")
+                        if Ascendingly if isinstance(selected_model, MLPClassifier) and show_visualization:
                             fig = visualize_neural_network_prediction(selected_model, processed_image, prediction)
                             st.pyplot(fig)
 
@@ -326,10 +322,8 @@ def create_streamlit_app():
                     if canvas_result.image_data is not None:
                         processed_canvas = preprocess_canvas_image(canvas_result.image_data)
                         prediction = selected_model.predict(processed_canvas)[0]
-                        probabilities = selected_model.predict_proba(processed_canvas)[0]
-                        st.write(f"🎯 **Dự đoán: {'Mèo' if prediction == 0 else 'Chó'}**")
-                        st.write(f"🔢 **Độ tin cậy: {probabilities[prediction] * 100:.2f}%**")
-                        if show_visualization and isinstance(selected_model, MLPClassifier):
+                        st.write(f"🎯 Dự đoán: {'Mèo' if prediction == 0 else 'Chó'}")
+                        if isinstance(selected_model, MLPClassifier) and show_visualization:
                             fig = visualize_neural_network_prediction(selected_model, processed_canvas, prediction)
                             st.pyplot(fig)
 
@@ -341,14 +335,7 @@ def create_streamlit_app():
                 runs["model_custom_name"] = runs["tags.mlflow.runName"]
             else:
                 runs["model_custom_name"] = "Unnamed Model"
-            available_columns = [
-                col for col in [
-                    "model_custom_name", "params.model_name", "start_time",
-                    "metrics.train_accuracy", "metrics.val_accuracy", "metrics.test_accuracy",
-                    "metrics.cv_mean_accuracy"
-                ] if col in runs.columns
-            ]
-            st.dataframe(runs[available_columns])
+            st.dataframe(runs[["model_custom_name", "params.model_name", "metrics.train_accuracy", "metrics.test_accuracy"]])
         else:
             st.write("⚠️ Không có phiên làm việc nào được ghi lại.")
 
