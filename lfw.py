@@ -32,7 +32,7 @@ if 'trained_models' not in st.session_state:
     st.session_state.trained_models = {}
 
 # Đường dẫn cố định đến thư mục dataset
-DATASET_PATH = "G:\Download\animals/"
+DATASET_PATH = r"G:\Download\animals"
 
 # Tải dữ liệu từ thư mục
 @st.cache_data
