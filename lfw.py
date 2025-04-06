@@ -309,7 +309,7 @@ def create_streamlit_app():
                     if st.button("🔮 Dự đoán"):
                         prediction = selected_model.predict(processed_image)[0]
                         st.write(f"🎯 Dự đoán: {'Mèo' if prediction == 0 else 'Chó'}")
-                        if Ascendingly if isinstance(selected_model, MLPClassifier) and show_visualization:
+                        if isinstance(selected_model, MLPClassifier) and show_visualization:
                             fig = visualize_neural_network_prediction(selected_model, processed_image, prediction)
                             st.pyplot(fig)
 
