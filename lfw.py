@@ -1,3 +1,4 @@
+
 import streamlit as st
 import mlflow
 import mlflow.sklearn
@@ -37,24 +38,38 @@ def load_data(dataset_path, n_samples=None):
     cat_path = os.path.join(dataset_path, "cats")
     dog_path = os.path.join(dataset_path, "dogs")
     
+    if not os.path.exists(cat_path) or not os.path.exists(dog_path):
+        st.error(f"Không tìm thấy thư mục: {cat_path} hoặc {dog_path}. Vui lòng kiểm tra đường dẫn!")
+        return None, None
+    
     X = []
     y = []
     
     # Tải ảnh mèo (nhãn 0)
-    for img_file in os.listdir(cat_path)[:250]:  # Giới hạn 250 mỗi lớp để đơn giản hóa
+    for img_file in os.listdir(cat_path):
         img_path = os.path.join(cat_path, img_file)
-        img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)  # Đọc ảnh xám
-        img = cv2.resize(img, (64, 64))  # Giảm kích thước để xử lý nhanh hơn
+        img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
+        if img is None:
+            st.warning(f"Không thể đọc file: {img_path}")
+            continue
+        img = cv2.resize(img, (64, 64))  # Giảm kích thước để xử lý nhanh
         X.append(img.flatten())
         y.append(0)
     
     # Tải ảnh chó (nhãn 1)
-    for img_file in os.listdir(dog_path)[:250]:
+    for img_file in os.listdir(dog_path):
         img_path = os.path.join(dog_path, img_file)
         img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
+        if img is None:
+            st.warning(f"Không thể đọc file: {img_path}")
+            continue
         img = cv2.resize(img, (64, 64))
         X.append(img.flatten())
         y.append(1)
+    
+    if not X:
+        st.error("Không có ảnh nào được tải. Kiểm tra lại thư mục hoặc định dạng file!")
+        return None, None
     
     X = np.array(X) / 255.0  # Chuẩn hóa
     y = np.array(y)
@@ -237,57 +252,61 @@ def create_streamlit_app():
 
     with tab2:
         dataset_path = st.text_input("Đường dẫn đến thư mục dataset:", "dataset/")
-        n_samples = st.number_input("Số lượng mẫu", min_value=100, max_value=500, value=500, step=50)
+        n_samples = st.number_input("Số lượng mẫu", min_value=100, max_value=1000, value=500, step=50)
         X, y = load_data(dataset_path, n_samples=n_samples)
-        st.write(f"**Số lượng mẫu được chọn: {X.shape[0]}**")
-        show_sample_images(X, y)
-
-        test_size = st.slider("Tỷ lệ Test (%)", min_value=5, max_value=30, value=15, step=5)
-        val_size = st.slider("Tỷ lệ Validation (%)", min_value=5, max_value=30, value=15, step=5)
-        train_size = 100 - test_size - val_size
-        if train_size <= 0:
-            st.error("Tỷ lệ không hợp lệ! Tổng Train + Val + Test phải = 100%.")
+        
+        if X is None or y is None:
+            st.error("Không thể tải dữ liệu. Vui lòng kiểm tra đường dẫn và thử lại!")
         else:
-            X_train, X_val, X_test, y_train, y_val, y_test = split_data(X, y, train_size=train_size/100, val_size=val_size/100, test_size=test_size/100)
-            st.session_state.data_split = (X_train, X_val, X_test, y_train, y_val, y_test)
+            st.write(f"**Số lượng mẫu được chọn: {X.shape[0]}**")
+            show_sample_images(X, y)
 
-            st.write("**🚀 Huấn luyện mô hình**")
-            model_type = st.selectbox("Chọn loại mô hình", ["SVM", "Neural Network"])
-            st.session_state.custom_model_name = st.text_input("Tên mô hình để lưu vào MLflow:")
-
-            if model_type == "SVM":
-                params = {
-                    "kernel": st.selectbox("Kernel", ["linear", "rbf"]),
-                    "C": st.slider("C (Regularization)", 0.1, 10.0, 1.0)
-                }
-                st.session_state.params_svm = params
+            test_size = st.slider("Tỷ lệ Test (%)", min_value=5, max_value=30, value=15, step=5)
+            val_size = st.slider("Tỷ lệ Validation (%)", min_value=5, max_value=30, value=15, step=5)
+            train_size = 100 - test_size - val_size
+            if train_size <= 0:
+                st.error("Tỷ lệ không hợp lệ! Tổng Train + Val + Test phải = 100%.")
             else:
-                params = {
-                    "num_hidden_layers": st.slider("Số lớp ẩn", 1, 2, 1),
-                    "neurons_per_layer": st.slider("Số neuron mỗi lớp", 20, 100, 50),
-                    "epochs": st.slider("Epochs", 5, 50, 10),
-                    "activation": st.selectbox("Hàm kích hoạt", ["relu", "tanh", "logistic"]),
-                    "learning_rate": st.slider("Tốc độ học", 0.0001, 0.1, 0.001)
-                }
-                st.session_state.params_nn = params
+                X_train, X_val, X_test, y_train, y_val, y_test = split_data(X, y, train_size=train_size/100, val_size=val_size/100, test_size=test_size/100)
+                st.session_state.data_split = (X_train, X_val, X_test, y_train, y_val, y_test)
 
-            if st.button("🚀 Huấn luyện"):
-                if not st.session_state.custom_model_name:
-                    st.error("Vui lòng nhập tên mô hình!")
+                st.write("**🚀 Huấn luyện mô hình**")
+                model_type = st.selectbox("Chọn loại mô hình", ["SVM", "Neural Network"])
+                st.session_state.custom_model_name = st.text_input("Tên mô hình để lưu vào MLflow:")
+
+                if model_type == "SVM":
+                    params = {
+                        "kernel": st.selectbox("Kernel", ["linear", "rbf"]),
+                        "C": st.slider("C (Regularization)", 0.1, 10.0, 1.0)
+                    }
+                    st.session_state.params_svm = params
                 else:
-                    X_train, X_val, X_test, y_train, y_val, y_test = st.session_state.data_split
-                    if model_type == "SVM":
-                        result = train_svm(st.session_state.custom_model_name, st.session_state.params_svm, X_train, X_val, X_test, y_train, y_val, y_test, st.session_state.cv_folds)
-                        st.session_state.model_svm = result[0]
+                    params = {
+                        "num_hidden_layers": st.slider("Số lớp ẩn", 1, 2, 1),
+                        "neurons_per_layer": st.slider("Số neuron mỗi lớp", 20, 100, 50),
+                        "epochs": st.slider("Epochs", 5, 50, 10),
+                        "activation": st.selectbox("Hàm kích hoạt", ["relu", "tanh", "logistic"]),
+                        "learning_rate": st.slider("Tốc độ học", 0.0001, 0.1, 0.001)
+                    }
+                    st.session_state.params_nn = params
+
+                if st.button("🚀 Huấn luyện"):
+                    if not st.session_state.custom_model_name:
+                        st.error("Vui lòng nhập tên mô hình!")
                     else:
-                        result = train_nn(st.session_state.custom_model_name, st.session_state.params_nn, X_train, X_val, X_test, y_train, y_val, y_test, st.session_state.cv_folds)
-                        st.session_state.model_nn = result[0]
-                    st.session_state.trained_models[st.session_state.custom_model_name] = result[0]
-                    st.success("✅ Huấn luyện xong!")
-                    st.write(f"Độ chính xác Train: {result[1]:.4f}")
-                    st.write(f"Độ chính xác Validation: {result[2]:.4f}")
-                    st.write(f"Độ chính xác Test: {result[3]:.4f}")
-                    st.write(f"Độ chính xác CV: {result[4]:.4f}")
+                        X_train, X_val, X_test, y_train, y_val, y_test = st.session_state.data_split
+                        if model_type == "SVM":
+                            result = train_svm(st.session_state.custom_model_name, st.session_state.params_svm, X_train, X_val, X_test, y_train, y_val, y_test, st.session_state.cv_folds)
+                            st.session_state.model_svm = result[0]
+                        else:
+                            result = train_nn(st.session_state.custom_model_name, st.session_state.params_nn, X_train, X_val, X_test, y_train, y_val, y_test, st.session_state.cv_folds)
+                            st.session_state.model_nn = result[0]
+                        st.session_state.trained_models[st.session_state.custom_model_name] = result[0]
+                        st.success("✅ Huấn luyện xong!")
+                        st.write(f"Độ chính xác Train: {result[1]:.4f}")
+                        st.write(f"Độ chính xác Validation: {result[2]:.4f}")
+                        st.write(f"Độ chính xác Test: {result[3]:.4f}")
+                        st.write(f"Độ chính xác CV: {result[4]:.4f}")
 
     with tab3:
         if not st.session_state.trained_models:
