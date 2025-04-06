@@ -1,4 +1,3 @@
-
 import streamlit as st
 import mlflow
 import mlflow.sklearn
@@ -32,9 +31,12 @@ if 'custom_model_name' not in st.session_state:
 if 'trained_models' not in st.session_state:
     st.session_state.trained_models = {}
 
+# Đường dẫn cố định đến thư mục dataset
+DATASET_PATH = "G:\Download\animals"
+
 # Tải dữ liệu từ thư mục
 @st.cache_data
-def load_data(dataset_path, n_samples=None):
+def load_data(dataset_path=DATASET_PATH, n_samples=None):
     cat_path = os.path.join(dataset_path, "cats")
     dog_path = os.path.join(dataset_path, "dogs")
     
@@ -251,12 +253,11 @@ def create_streamlit_app():
         st.write("Tập dữ liệu: 1000 ảnh (500 mèo, 500 chó), độ phân giải 512x512, định dạng .png, được tạo bởi Stable Diffusion 1.5.")
 
     with tab2:
-        dataset_path = st.text_input("Đường dẫn đến thư mục dataset:", "dataset/")
         n_samples = st.number_input("Số lượng mẫu", min_value=100, max_value=1000, value=500, step=50)
-        X, y = load_data(dataset_path, n_samples=n_samples)
+        X, y = load_data(n_samples=n_samples)
         
         if X is None or y is None:
-            st.error("Không thể tải dữ liệu. Vui lòng kiểm tra đường dẫn và thử lại!")
+            st.error("Không thể tải dữ liệu. Vui lòng kiểm tra thư mục 'dataset/'!")
         else:
             st.write(f"**Số lượng mẫu được chọn: {X.shape[0]}**")
             show_sample_images(X, y)
