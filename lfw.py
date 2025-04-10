@@ -52,12 +52,78 @@ def show_sample_data(X, y):
     sample_df = pd.concat([X, pd.Series(y, name='Label')], axis=1).head(5)
     st.dataframe(sample_df)
     
-    st.write("**🌸 Biểu đồ phân bố dữ liệu**")
-    fig, ax = plt.subplots(figsize=(8, 4))
+    st.write("**🌸 Minh họa vài mẫu dữ liệu**")
+    fig, axes = plt.subplots(1, 2, figsize=(10, 4))
+    
+    # Biểu đồ 1: Phân bố Leaf Length và Petal Size
     sns.scatterplot(data=pd.concat([X, pd.Series(y, name='Label')], axis=1), 
-                   x='Leaf_Length', y='Petal_Size', hue='Label', palette='deep')
-    ax.set_title("Phân bố Leaf Length và Petal Size theo Label")
+                    x='Leaf_Length', y='Petal_Size', hue='Label', palette='deep', ax=axes[0])
+    axes[0].set_title("Leaf Length vs Petal Size")
+    
+    # Biểu đồ 2: Phân bố Stem Length và Leaf Width
+    sns.scatterplot(data=pd.concat([X, pd.Series(y, name='Label')], axis=1), 
+                    x='Stem_Length', y='Leaf_Width', hue='Label', palette='deep', ax=axes[1])
+    axes[1].set_title("Stem Length vs Leaf Width")
+    
+    plt.tight_layout()
     st.pyplot(fig)
+
+# 📌 Huấn luyện mô hình (giữ nguyên như trước)
+def train_model(custom_model_name, model_name, params, X_train, X_val, X_test, y_train, y_val, y_test):
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    status_text.text("Đang khởi tạo mô hình... (0%)")
+
+    if model_name == "Logistic Regression":
+        model = LogisticRegression(C=params["C"], max_iter=params["max_iter"], random_state=42)
+    elif model_name == "SVM":
+        model = SVC(kernel=params["kernel"], C=params["C"], probability=True, random_state=42)
+    else:
+        raise ValueError("Invalid model selected!")
+
+    try:
+        with mlflow.start_run(run_name=custom_model_name):
+            progress_bar.progress(0.1)
+            status_text.text("Đang huấn luyện mô hình... (10%)")
+            start_time = time.time()
+
+            model.fit(X_train, y_train)
+            train_end_time = time.time()
+            progress_bar.progress(0.5)
+            status_text.text(f"Đã huấn luyện xong... (50%)")
+
+            y_train_pred = model.predict(X_train)
+            progress_bar.progress(0.6)
+            status_text.text("Đang dự đoán trên tập train... (60%)")
+
+            y_val_pred = model.predict(X_val)
+            progress_bar.progress(0.7)
+            status_text.text("Đang dự đoán trên tập validation... (70%)")
+
+            y_test_pred = model.predict(X_test)
+            progress_bar.progress(0.8)
+            status_text.text("Đã dự đoán xong... (80%)")
+
+            train_accuracy = accuracy_score(y_train, y_train_pred)
+            val_accuracy = accuracy_score(y_val, y_val_pred)
+            test_accuracy = accuracy_score(y_test, y_test_pred)
+
+            status_text.text("Đang ghi log vào MLflow... (90%)")
+            mlflow.log_param("model_name", model_name)
+            mlflow.log_params(params)
+            mlflow.log_metric("train_accuracy", train_accuracy)
+            mlflow.log_metric("val_accuracy", val_accuracy)
+            mlflow.log_metric("test_accuracy", test_accuracy)
+            
+            input_example = X_train[:1]
+            mlflow.sklearn.log_model(model, model_name, input_example=input_example)
+            progress_bar.progress(1.0)
+            status_text.text("Hoàn tất! (100%)")
+    except Exception as e:
+        st.error(f"Lỗi trong quá trình huấn luyện: {str(e)}")
+        return None, None, None, None
+
+    return model, train_accuracy, val_accuracy, test_accuracy
 
 # 📌 Giao diện Streamlit
 def create_streamlit_app():
@@ -69,19 +135,14 @@ def create_streamlit_app():
     with tab1:
         st.header("Tiền xử lý dữ liệu")
         
-        # Upload file CSV
         uploaded_file = st.file_uploader("📤 Tải lên file CSV dữ liệu hoa (flower_measurements.csv)", type=["csv"])
         
         if uploaded_file is not None:
             X, y = load_data(uploaded_file)
             if X is not None and y is not None:
-                # Hiển thị kích thước dữ liệu
                 st.write(f"**Kích thước dữ liệu: {X.shape}**")
-                
-                # Hiển thị 5 mẫu dữ liệu đầu tiên và biểu đồ
                 show_sample_data(X, y)
                 
-                # Chia dữ liệu
                 st.write("**📊 Chia dữ liệu**")
                 test_size = st.slider("Tỷ lệ Test (%)", min_value=5, max_value=30, value=15, step=5)
                 val_size = st.slider("Tỷ lệ Validation (%)", min_value=5, max_value=30, value=15, step=5)
@@ -113,7 +174,7 @@ def create_streamlit_app():
         else:
             st.info("Vui lòng tải lên file CSV để bắt đầu tiền xử lý dữ liệu.")
 
-    # Các tab khác giữ nguyên (Tab 2, Tab 3, Tab 4)
+    # Tab 2: Huấn luyện (giữ nguyên)
     with tab2:
         st.header("Huấn luyện mô hình")
         if 'X_train' not in st.session_state:
@@ -150,25 +211,42 @@ def create_streamlit_app():
                 else:
                     st.error("Huấn luyện thất bại, không có kết quả để hiển thị.")
 
+    # Tab 3: Dự đoán
     with tab3:
         st.header("Dự đoán")
-        if 'model' not in st.session_state or 'scaler' not in st.session_state:
-            st.warning("Vui lòng huấn luyện mô hình trước!")
-        else:
-            st.write("Nhập thông số hoa để dự đoán:")
-            leaf_length = st.number_input("Leaf Length", min_value=0.0, value=5.0)
-            leaf_width = st.number_input("Leaf Width", min_value=0.0, value=2.0)
-            stem_length = st.number_input("Stem Length", min_value=0.0, value=30.0)
-            petal_size = st.number_input("Petal Size", min_value=0.0, value=3.0)
+        
+        # Lấy danh sách các mô hình đã huấn luyện từ MLflow
+        runs = mlflow.search_runs(order_by=["start_time desc"])
+        if not runs.empty and 'scaler' in st.session_state:
+            runs["model_custom_name"] = runs["tags.mlflow.runName"]
+            model_names = runs["model_custom_name"].tolist()
             
-            if st.button("🔮 Dự đoán"):
-                input_data = np.array([[leaf_length, leaf_width, stem_length, petal_size]])
-                input_scaled = st.session_state['scaler'].transform(input_data)
-                prediction = st.session_state['model'].predict(input_scaled)[0]
-                probabilities = st.session_state['model'].predict_proba(input_scaled)[0]
-                st.write(f"🎯 **Dự đoán: Label {prediction}**")
-                st.write(f"🔢 **Độ tin cậy: {probabilities[prediction] * 100:.2f}%**")
+            selected_model_name = st.selectbox("🔍 Chọn mô hình để dự đoán", model_names)
+            if selected_model_name:
+                selected_run = runs[runs["model_custom_name"] == selected_model_name].iloc[0]
+                model_uri = f"runs:/{selected_run['run_id']}/{selected_run['params.model_name']}"
+                try:
+                    selected_model = mlflow.sklearn.load_model(model_uri)
+                    
+                    st.write("Nhập thông số hoa để dự đoán:")
+                    leaf_length = st.number_input("Leaf Length", min_value=0.0, value=5.0)
+                    leaf_width = st.number_input("Leaf Width", min_value=0.0, value=2.0)
+                    stem_length = st.number_input("Stem Length", min_value=0.0, value=30.0)
+                    petal_size = st.number_input("Petal Size", min_value=0.0, value=3.0)
+                    
+                    if st.button("🔮 Dự đoán"):
+                        input_data = np.array([[leaf_length, leaf_width, stem_length, petal_size]])
+                        input_scaled = st.session_state['scaler'].transform(input_data)
+                        prediction = selected_model.predict(input_scaled)[0]
+                        probabilities = selected_model.predict_proba(input_scaled)[0]
+                        st.write(f"🎯 **Dự đoán: Label {prediction}**")
+                        st.write(f"🔢 **Độ tin cậy: {probabilities[prediction] * 100:.2f}%**")
+                except Exception as e:
+                    st.error(f"Không thể tải mô hình: {str(e)}")
+        else:
+            st.warning("Vui lòng huấn luyện ít nhất một mô hình và thực hiện tiền xử lý dữ liệu trước!")
 
+    # Tab 4: MLflow (giữ nguyên)
     with tab4:
         st.header("MLflow Tracking")
         st.write("Xem chi tiết các kết quả đã lưu trong MLflow.")
