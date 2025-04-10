@@ -130,7 +130,7 @@ def train_model(custom_model_name, model_name, params, X_train, X_val, X_test, y
             mlflow.log_params(params)
             mlflow.log_param("k_folds", k_folds)
             mlflow.log_metric("cv_mean_accuracy", cv_mean)
-            mlflow.log_metric("cv_std", cv_std)
+            # mlflow.log_metric("cv_std", cv_std)
             mlflow.log_metric("train_accuracy", train_accuracy)
             mlflow.log_metric("val_accuracy", val_accuracy)
             mlflow.log_metric("test_accuracy", test_accuracy)
