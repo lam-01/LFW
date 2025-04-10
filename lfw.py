@@ -164,7 +164,7 @@ def create_streamlit_app():
                 st.write(f"**Kích thước dữ liệu: {X.shape}**")
                 show_sample_data(X, y)
                 
-                st.write("**📊 Chia dữ liệu**")
+                st.write("**📊 Chia tập dữ liệu**")
                 test_size = st.slider("Tỷ lệ Test (%)", min_value=5, max_value=30, value=15, step=5)
                 val_size = st.slider("Tỷ lệ Validation (%)", min_value=5, max_value=30, value=15, step=5)
                 
@@ -175,7 +175,7 @@ def create_streamlit_app():
                     st.error("Tỷ lệ Validation quá lớn so với Train! Vui lòng điều chỉnh lại.")
                 else:
                     X_train, X_val, X_test, y_train, y_val, y_test = split_data(X, y, train_size=0.7, val_size=val_size/100, test_size=test_size/100)
-                    if st.button("Tiền xử lý dữ liệu"):
+                    if st.button("Chia dữ liệu"):
                         X_train_scaled, X_val_scaled, X_test_scaled, scaler = preprocess_data(X_train, X_val, X_test)
                         st.session_state['X_train'] = X_train_scaled
                         st.session_state['X_val'] = X_val_scaled
@@ -192,7 +192,7 @@ def create_streamlit_app():
                             "Số lượng mẫu": [len(X_train), len(X_val), len(X_test)]
                         })
                         st.table(data_ratios)
-                        st.success("Tiền xử lý dữ liệu hoàn tất!")
+
         else:
             st.info("Vui lòng tải lên file CSV để bắt đầu tiền xử lý dữ liệu.")
 
@@ -230,14 +230,14 @@ def create_streamlit_app():
                 if model is not None:
                     st.session_state['model'] = model
                     st.success(f"✅ Huấn luyện xong!")
-                    st.write(f"🎯 **Độ chính xác Cross Validation (mean ± std): {cv_mean:.4f} ± {cv_std:.4f}**")
+                    st.write(f"🎯 **Độ chính xác Cross Validation : {cv_mean:.4f}**")
                     st.write(f"🎯 **Độ chính xác trên tập train: {train_accuracy:.4f}**")
                     st.write(f"🎯 **Độ chính xác trên tập validation: {val_accuracy:.4f}**")
                     st.write(f"🎯 **Độ chính xác trên tập test: {test_accuracy:.4f}**")
                 else:
                     st.error("Huấn luyện thất bại, không có kết quả để hiển thị.")
 
-    # Tab 3: Dự đoán (Bổ sung kiểm tra trùng lặp)
+    # Tab 3: Dự đoán 
     with tab3:
         st.header("Dự đoán")
         
