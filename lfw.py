@@ -48,11 +48,11 @@ def preprocess_data(X_train, X_val, X_test):
 
 # 📌 Hiển thị một số mẫu dữ liệu
 def show_sample_data(X, y):
-    st.write("**🌸 Một vài mẫu dữ liệu từ Flower Measurements**")
-    sample_df = pd.concat([X, pd.Series(y, name='Label')], axis=1).head(5)
     st.write("**5 mẫu dữ liệu đầu tiên:**")
+    sample_df = pd.concat([X, pd.Series(y, name='Label')], axis=1).head(5)
     st.dataframe(sample_df)
     
+    st.write("**🌸 Biểu đồ phân bố dữ liệu**")
     fig, ax = plt.subplots(figsize=(8, 4))
     sns.scatterplot(data=pd.concat([X, pd.Series(y, name='Label')], axis=1), 
                    x='Leaf_Length', y='Petal_Size', hue='Label', palette='deep')
@@ -71,43 +71,49 @@ def create_streamlit_app():
         
         # Upload file CSV
         uploaded_file = st.file_uploader("📤 Tải lên file CSV dữ liệu hoa (flower_measurements.csv)", type=["csv"])
-        X, y = load_data(uploaded_file)
         
-        if X is not None and y is not None:
-            st.write(f"**Kích thước dữ liệu: {X.shape}**")
-            show_sample_data(X, y)
-            
-            test_size = st.slider("Tỷ lệ Test (%)", min_value=5, max_value=30, value=15, step=5)
-            val_size = st.slider("Tỷ lệ Validation (%)", min_value=5, max_value=30, value=15, step=5)
-            
-            train_size = 100 - test_size
-            val_ratio = val_size / train_size
-            
-            if val_ratio >= 1.0:
-                st.error("Tỷ lệ Validation quá lớn so với Train! Vui lòng điều chỉnh lại.")
-            else:
-                X_train, X_val, X_test, y_train, y_val, y_test = split_data(X, y, train_size=0.7, val_size=val_size/100, test_size=test_size/100)
-                if st.button("Tiền xử lý dữ liệu"):
-                    X_train_scaled, X_val_scaled, X_test_scaled, scaler = preprocess_data(X_train, X_val, X_test)
-                    st.session_state['X_train'] = X_train_scaled
-                    st.session_state['X_val'] = X_val_scaled
-                    st.session_state['X_test'] = X_test_scaled
-                    st.session_state['y_train'] = y_train
-                    st.session_state['y_val'] = y_val
-                    st.session_state['y_test'] = y_test
-                    st.session_state['scaler'] = scaler
-                    
-                    data_ratios = pd.DataFrame({
-                        "Tập dữ liệu": ["Train", "Validation", "Test"],
-                        "Tỷ lệ (%)": [train_size - val_size, val_size, test_size],
-                        "Số lượng mẫu": [len(X_train), len(X_val), len(X_test)]
-                    })
-                    st.table(data_ratios)
-                    st.success("Tiền xử lý dữ liệu hoàn tất!")
+        if uploaded_file is not None:
+            X, y = load_data(uploaded_file)
+            if X is not None and y is not None:
+                # Hiển thị kích thước dữ liệu
+                st.write(f"**Kích thước dữ liệu: {X.shape}**")
+                
+                # Hiển thị 5 mẫu dữ liệu đầu tiên và biểu đồ
+                show_sample_data(X, y)
+                
+                # Chia dữ liệu
+                st.write("**📊 Chia dữ liệu**")
+                test_size = st.slider("Tỷ lệ Test (%)", min_value=5, max_value=30, value=15, step=5)
+                val_size = st.slider("Tỷ lệ Validation (%)", min_value=5, max_value=30, value=15, step=5)
+                
+                train_size = 100 - test_size
+                val_ratio = val_size / train_size
+                
+                if val_ratio >= 1.0:
+                    st.error("Tỷ lệ Validation quá lớn so với Train! Vui lòng điều chỉnh lại.")
+                else:
+                    X_train, X_val, X_test, y_train, y_val, y_test = split_data(X, y, train_size=0.7, val_size=val_size/100, test_size=test_size/100)
+                    if st.button("Tiền xử lý dữ liệu"):
+                        X_train_scaled, X_val_scaled, X_test_scaled, scaler = preprocess_data(X_train, X_val, X_test)
+                        st.session_state['X_train'] = X_train_scaled
+                        st.session_state['X_val'] = X_val_scaled
+                        st.session_state['X_test'] = X_test_scaled
+                        st.session_state['y_train'] = y_train
+                        st.session_state['y_val'] = y_val
+                        st.session_state['y_test'] = y_test
+                        st.session_state['scaler'] = scaler
+                        
+                        data_ratios = pd.DataFrame({
+                            "Tập dữ liệu": ["Train", "Validation", "Test"],
+                            "Tỷ lệ (%)": [train_size - val_size, val_size, test_size],
+                            "Số lượng mẫu": [len(X_train), len(X_val), len(X_test)]
+                        })
+                        st.table(data_ratios)
+                        st.success("Tiền xử lý dữ liệu hoàn tất!")
         else:
-            st.warning("Vui lòng tải lên file dữ liệu để tiếp tục!")
+            st.info("Vui lòng tải lên file CSV để bắt đầu tiền xử lý dữ liệu.")
 
-    # Các tab khác giữ nguyên như trước
+    # Các tab khác giữ nguyên (Tab 2, Tab 3, Tab 4)
     with tab2:
         st.header("Huấn luyện mô hình")
         if 'X_train' not in st.session_state:
