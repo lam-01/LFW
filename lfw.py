@@ -3,7 +3,7 @@ import mlflow
 import mlflow.sklearn
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, KFold
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC
@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import time
 
-# 📌 Tải dữ liệu từ file CSV
+# 📌 Tải dữ liệu từ file CSV (tải lên hoặc mặc định)
 @st.cache_data
 def load_data(uploaded_file=None):
     if uploaded_file is not None:
@@ -27,7 +27,7 @@ def load_data(uploaded_file=None):
     y = df['Label'].astype(int)
     return X, y
 
-# 📌 Chia dữ liệu
+# 📌 Chia dữ liệu thành train, validation, và test
 @st.cache_data
 def split_data(X, y, train_size=0.7, val_size=0.15, test_size=0.15, random_state=42):
     X_train, X_test, y_train, y_test = train_test_split(
@@ -46,7 +46,7 @@ def preprocess_data(X_train, X_val, X_test):
     X_test_scaled = scaler.transform(X_test)
     return X_train_scaled, X_val_scaled, X_test_scaled, scaler
 
-# 📌 Hiển thị mẫu dữ liệu
+# 📌 Hiển thị một số mẫu dữ liệu
 def show_sample_data(X, y):
     st.write("**5 mẫu dữ liệu đầu tiên:**")
     sample_df = pd.concat([X, pd.Series(y, name='Label')], axis=1).head(5)
@@ -66,32 +66,8 @@ def show_sample_data(X, y):
     plt.tight_layout()
     st.pyplot(fig)
 
-# 📌 Vẽ minh họa hoa đơn giản dựa trên số đo
-def draw_flower_image(leaf_length, leaf_width, stem_length, petal_size, label):
-    fig, ax = plt.subplots(figsize=(4, 6))
-    
-    # Vẽ thân (stem)
-    ax.plot([0.5, 0.5], [0, stem_length/10], color='green', lw=3)
-    
-    # Vẽ lá (leaf)
-    ax.plot([0.5, 0.5 + leaf_width/10], [stem_length/20, stem_length/20 + leaf_length/20], color='darkgreen', lw=2)
-    ax.plot([0.5, 0.5 - leaf_width/10], [stem_length/20, stem_length/20 + leaf_length/20], color='darkgreen', lw=2)
-    
-    # Vẽ cánh hoa (petal)
-    circle = plt.Circle((0.5, stem_length/10), petal_size/20, color='pink' if label == 0 else 'purple')
-    ax.add_patch(circle)
-    
-    # Tùy chỉnh
-    ax.set_xlim(0, 1)
-    ax.set_ylim(0, max(stem_length/10 + petal_size/10, 1))
-    ax.set_aspect('equal')
-    ax.axis('off')
-    ax.set_title(f"Label {label}")
-    
-    return fig
-
-# 📌 Huấn luyện mô hình (giữ nguyên)
-def train_model(custom_model_name, model_name, params, X_train, X_val, X_test, y_train, y_val, y_test):
+# 📌 Huấn luyện mô hình với K-Fold Cross Validation
+def train_model(custom_model_name, model_name, params, X_train, X_val, X_test, y_train, y_val, y_test, k_folds=5):
     progress_bar = st.progress(0)
     status_text = st.empty()
     status_text.text("Đang khởi tạo mô hình... (0%)")
@@ -105,15 +81,38 @@ def train_model(custom_model_name, model_name, params, X_train, X_val, X_test, y
 
     try:
         with mlflow.start_run(run_name=custom_model_name):
+            # Bước 1: Khởi tạo mô hình
             progress_bar.progress(0.1)
-            status_text.text("Đang huấn luyện mô hình... (10%)")
+            status_text.text("Đang thực hiện K-Fold Cross Validation... (10%)")
             start_time = time.time()
 
-            model.fit(X_train, y_train)
-            train_end_time = time.time()
-            progress_bar.progress(0.5)
-            status_text.text(f"Đã huấn luyện xong... (50%)")
+            # K-Fold Cross Validation
+            kf = KFold(n_splits=k_folds, shuffle=True, random_state=42)
+            cv_scores = []
+            X_train_val = np.concatenate((X_train, X_val), axis=0)
+            y_train_val = np.concatenate((y_train, y_val), axis=0)
+            
+            for fold, (train_idx, val_idx) in enumerate(kf.split(X_train_val)):
+                X_fold_train, X_fold_val = X_train_val[train_idx], X_train_val[val_idx]
+                y_fold_train, y_fold_val = y_train_val[train_idx], y_train_val[val_idx]
+                
+                model.fit(X_fold_train, y_fold_train)
+                y_fold_pred = model.predict(X_fold_val)
+                fold_accuracy = accuracy_score(y_fold_val, y_fold_pred)
+                cv_scores.append(fold_accuracy)
+                progress_bar.progress(0.1 + (0.4 * (fold + 1) / k_folds))
+                status_text.text(f"Cross Validation - Fold {fold + 1}/{k_folds} hoàn tất ({int(10 + 40 * (fold + 1) / k_folds)}%)")
 
+            cv_mean = np.mean(cv_scores)
+            cv_std = np.std(cv_scores)
+
+            # Bước 2: Huấn luyện mô hình trên toàn bộ tập train + validation
+            progress_bar.progress(0.5)
+            status_text.text("Đang huấn luyện mô hình trên toàn bộ dữ liệu... (50%)")
+            model.fit(X_train_val, y_train_val)
+            train_end_time = time.time()
+
+            # Bước 3: Dự đoán trên các tập dữ liệu
             y_train_pred = model.predict(X_train)
             progress_bar.progress(0.6)
             status_text.text("Đang dự đoán trên tập train... (60%)")
@@ -126,13 +125,18 @@ def train_model(custom_model_name, model_name, params, X_train, X_val, X_test, y
             progress_bar.progress(0.8)
             status_text.text("Đã dự đoán xong... (80%)")
 
+            # Tính toán độ chính xác
             train_accuracy = accuracy_score(y_train, y_train_pred)
             val_accuracy = accuracy_score(y_val, y_val_pred)
             test_accuracy = accuracy_score(y_test, y_test_pred)
 
+            # Bước 4: Ghi log vào MLflow
             status_text.text("Đang ghi log vào MLflow... (90%)")
             mlflow.log_param("model_name", model_name)
             mlflow.log_params(params)
+            mlflow.log_param("k_folds", k_folds)
+            mlflow.log_metric("cv_mean_accuracy", cv_mean)
+            mlflow.log_metric("cv_std", cv_std)
             mlflow.log_metric("train_accuracy", train_accuracy)
             mlflow.log_metric("val_accuracy", val_accuracy)
             mlflow.log_metric("test_accuracy", test_accuracy)
@@ -143,9 +147,9 @@ def train_model(custom_model_name, model_name, params, X_train, X_val, X_test, y
             status_text.text("Hoàn tất! (100%)")
     except Exception as e:
         st.error(f"Lỗi trong quá trình huấn luyện: {str(e)}")
-        return None, None, None, None
+        return None, None, None, None, None, None
 
-    return model, train_accuracy, val_accuracy, test_accuracy
+    return model, train_accuracy, val_accuracy, test_accuracy, cv_mean, cv_std
 
 # 📌 Giao diện Streamlit
 def create_streamlit_app():
@@ -196,7 +200,7 @@ def create_streamlit_app():
         else:
             st.info("Vui lòng tải lên file CSV để bắt đầu tiền xử lý dữ liệu.")
 
-    # Tab 2: Huấn luyện (giữ nguyên)
+    # Tab 2: Huấn luyện (bổ sung K-Fold)
     with tab2:
         st.header("Huấn luyện mô hình")
         if 'X_train' not in st.session_state:
@@ -216,17 +220,22 @@ def create_streamlit_app():
                 params["kernel"] = st.selectbox("⚙️ Kernel", ["linear", "rbf", "poly", "sigmoid"])
                 params["C"] = st.slider("🔧 Tham số C", 0.1, 10.0, 1.0)
 
+            # Thêm tùy chọn K-Fold
+            k_folds = st.slider("🔢 Số lượng K-Fold cho Cross Validation", min_value=2, max_value=10, value=5, step=1)
+
             if st.button("🚀 Huấn luyện mô hình"):
                 with st.spinner("🔄 Đang khởi tạo huấn luyện..."):
-                    model, train_accuracy, val_accuracy, test_accuracy = train_model(
+                    model, train_accuracy, val_accuracy, test_accuracy, cv_mean, cv_std = train_model(
                         custom_model_name, model_name, params, 
                         st.session_state['X_train'], st.session_state['X_val'], st.session_state['X_test'],
-                        st.session_state['y_train'], st.session_state['y_val'], st.session_state['y_test']
+                        st.session_state['y_train'], st.session_state['y_val'], st.session_state['y_test'],
+                        k_folds=k_folds
                     )
                 
                 if model is not None:
                     st.session_state['model'] = model
                     st.success(f"✅ Huấn luyện xong!")
+                    st.write(f"🎯 **Độ chính xác Cross Validation (mean ± std): {cv_mean:.4f} ± {cv_std:.4f}**")
                     st.write(f"🎯 **Độ chính xác trên tập train: {train_accuracy:.4f}**")
                     st.write(f"🎯 **Độ chính xác trên tập validation: {val_accuracy:.4f}**")
                     st.write(f"🎯 **Độ chính xác trên tập test: {test_accuracy:.4f}**")
@@ -262,17 +271,12 @@ def create_streamlit_app():
                         probabilities = selected_model.predict_proba(input_scaled)[0]
                         st.write(f"🎯 **Dự đoán: Label {prediction}**")
                         st.write(f"🔢 **Độ tin cậy: {probabilities[prediction] * 100:.2f}%**")
-                        
-                        # Minh họa hình ảnh hoa dựa trên số đo
-                        st.write("**🌼 Minh họa hoa dự đoán**")
-                        fig = draw_flower_image(leaf_length, leaf_width, stem_length, petal_size, prediction)
-                        st.pyplot(fig)
                 except Exception as e:
                     st.error(f"Không thể tải mô hình: {str(e)}")
         else:
             st.warning("Vui lòng huấn luyện ít nhất một mô hình và thực hiện tiền xử lý dữ liệu trước!")
 
-    # Tab 4: MLflow (giữ nguyên)
+    # Tab 4: MLflow
     with tab4:
         st.header("MLflow Tracking")
         st.write("Xem chi tiết các kết quả đã lưu trong MLflow.")
@@ -290,7 +294,8 @@ def create_streamlit_app():
             if not filtered_runs.empty:
                 st.write("📜 Danh sách mô hình đã lưu:")
                 available_columns = [col for col in ["model_custom_name", "params.model_name", "start_time", 
-                                                     "metrics.train_accuracy", "metrics.val_accuracy", "metrics.test_accuracy"] 
+                                                     "metrics.train_accuracy", "metrics.val_accuracy", 
+                                                     "metrics.test_accuracy", "metrics.cv_mean_accuracy"] 
                                      if col in runs.columns]
                 display_df = filtered_runs[available_columns]
                 
@@ -300,7 +305,8 @@ def create_streamlit_app():
                 
                 display_df = display_df.rename(columns={
                     "model_custom_name": "Custom Model Name",
-                    "params.model_name": "Model Type"
+                    "params.model_name": "Model Type",
+                    "metrics.cv_mean_accuracy": "CV Mean Accuracy"
                 })
                 st.dataframe(display_df)
 
