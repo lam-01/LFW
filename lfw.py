@@ -25,9 +25,7 @@ def load_data(uploaded_file=None):
             return None, None
     X = df.drop('Label', axis=1)
     y = df['Label'].astype(int)
-    # Tính phạm vi của từng đặc trưng
-    feature_ranges = {col: (X[col].min(), X[col].max()) for col in X.columns}
-    return X, y, feature_ranges
+    return X, y, df  # Trả về thêm df để sử dụng trong kiểm tra trùng lặp
 
 # 📌 Chia dữ liệu thành train, validation, và test
 @st.cache_data
@@ -160,9 +158,9 @@ def create_streamlit_app():
         uploaded_file = st.file_uploader("📤 Tải lên file CSV dữ liệu hoa (flower_measurements.csv)", type=["csv"])
         
         if uploaded_file is not None:
-            X, y, feature_ranges = load_data(uploaded_file)
+            X, y, df_original = load_data(uploaded_file)
             if X is not None and y is not None:
-                st.session_state['feature_ranges'] = feature_ranges  # Lưu phạm vi đặc trưng vào session_state
+                st.session_state['df_original'] = df_original  # Lưu dữ liệu gốc vào session_state
                 st.write(f"**Kích thước dữ liệu: {X.shape}**")
                 show_sample_data(X, y)
                 
@@ -186,6 +184,7 @@ def create_streamlit_app():
                         st.session_state['y_val'] = y_val
                         st.session_state['y_test'] = y_test
                         st.session_state['scaler'] = scaler
+                        st.session_state['X_original'] = X  # Lưu X gốc để so sánh trong dự đoán
                         
                         data_ratios = pd.DataFrame({
                             "Tập dữ liệu": ["Train", "Validation", "Test"],
@@ -238,12 +237,12 @@ def create_streamlit_app():
                 else:
                     st.error("Huấn luyện thất bại, không có kết quả để hiển thị.")
 
-    # Tab 3: Dự đoán (bổ sung kiểm tra phạm vi)
+    # Tab 3: Dự đoán (Bổ sung kiểm tra trùng lặp)
     with tab3:
         st.header("Dự đoán")
         
         runs = mlflow.search_runs(order_by=["start_time desc"])
-        if not runs.empty and 'scaler' in st.session_state and 'feature_ranges' in st.session_state:
+        if not runs.empty and 'scaler' in st.session_state and 'df_original' in st.session_state:
             runs["model_custom_name"] = runs["tags.mlflow.runName"]
             model_names = runs["model_custom_name"].tolist()
             
@@ -260,32 +259,30 @@ def create_streamlit_app():
                     stem_length = st.number_input("Stem Length", min_value=0.0, value=30.0)
                     petal_size = st.number_input("Petal Size", min_value=0.0, value=3.0)
                     
-                    # Kiểm tra phạm vi
-                    feature_ranges = st.session_state['feature_ranges']
-                    input_data = {
-                        'Leaf_Length': leaf_length,
-                        'Leaf_Width': leaf_width,
-                        'Stem_Length': stem_length,
-                        'Petal_Size': petal_size
-                    }
-                    out_of_range = []
-                    for feature, value in input_data.items():
-                        min_val, max_val = feature_ranges[feature]
-                        if value < min_val or value > max_val:
-                            out_of_range.append(f"{feature} ({value:.2f}) ngoài phạm vi [{min_val:.2f}, {max_val:.2f}]")
-                    
-                    if out_of_range:
-                        st.warning("Các thông số sau nằm ngoài phạm vi dữ liệu gốc:\n" + "\n".join(out_of_range))
-                    else:
-                        st.info("Tất cả thông số đều nằm trong phạm vi dữ liệu gốc.")
-                    
                     if st.button("🔮 Dự đoán"):
-                        input_array = np.array([[leaf_length, leaf_width, stem_length, petal_size]])
-                        input_scaled = st.session_state['scaler'].transform(input_array)
+                        input_data = np.array([[leaf_length, leaf_width, stem_length, petal_size]])
+                        input_scaled = st.session_state['scaler'].transform(input_data)
                         prediction = selected_model.predict(input_scaled)[0]
                         probabilities = selected_model.predict_proba(input_scaled)[0]
+                        
                         st.write(f"🎯 **Dự đoán: Label {prediction}**")
                         st.write(f"🔢 **Độ tin cậy: {probabilities[prediction] * 100:.2f}%**")
+                        
+                        # Kiểm tra trùng lặp với dữ liệu gốc
+                        df_original = st.session_state['df_original']
+                        input_df = pd.DataFrame(input_data, columns=['Leaf_Length', 'Leaf_Width', 'Stem_Length', 'Petal_Size'])
+                        matches = df_original[
+                            (df_original['Leaf_Length'] == leaf_length) &
+                            (df_original['Leaf_Width'] == leaf_width) &
+                            (df_original['Stem_Length'] == stem_length) &
+                            (df_original['Petal_Size'] == petal_size)
+                        ]
+                        
+                        if not matches.empty:
+                            st.write("**✅ Thông số này trùng với dữ liệu trong bộ dữ liệu gốc:**")
+                            st.dataframe(matches)
+                        else:
+                            st.write("**❌ Thông số này không trùng với bất kỳ mẫu nào trong bộ dữ liệu gốc.**")
                 except Exception as e:
                     st.error(f"Không thể tải mô hình: {str(e)}")
         else:
