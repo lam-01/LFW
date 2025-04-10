@@ -254,10 +254,10 @@ def create_streamlit_app():
                     selected_model = mlflow.sklearn.load_model(model_uri)
                     
                     st.write("Nhập thông số hoa để dự đoán:")
-                    leaf_length = st.number_input("Leaf Length", min_value=0.000000, value=5.000000)
-                    leaf_width = st.number_input("Leaf Width", min_value=0.000000, value=2.000000)
-                    stem_length = st.number_input("Stem Length", min_value=0.000000, value=30.000000)
-                    petal_size = st.number_input("Petal Size", min_value=0.000000, value=3.000000)
+                    leaf_length = st.number_input("Leaf Length", min_value=0.0, value=5.0)
+                    leaf_width = st.number_input("Leaf Width", min_value=0.0, value=2.0)
+                    stem_length = st.number_input("Stem Length", min_value=0.0, value=30.0)
+                    petal_size = st.number_input("Petal Size", min_value=0.0, value=3.0)
                     
                     if st.button("🔮 Dự đoán"):
                         input_data = np.array([[leaf_length, leaf_width, stem_length, petal_size]])
