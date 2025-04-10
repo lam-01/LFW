@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import time
 
-# 📌 Tải dữ liệu từ file CSV (tải lên hoặc mặc định)
+# 📌 Tải dữ liệu từ file CSV
 @st.cache_data
 def load_data(uploaded_file=None):
     if uploaded_file is not None:
@@ -27,7 +27,7 @@ def load_data(uploaded_file=None):
     y = df['Label'].astype(int)
     return X, y
 
-# 📌 Chia dữ liệu thành train, validation, và test
+# 📌 Chia dữ liệu
 @st.cache_data
 def split_data(X, y, train_size=0.7, val_size=0.15, test_size=0.15, random_state=42):
     X_train, X_test, y_train, y_test = train_test_split(
@@ -46,7 +46,7 @@ def preprocess_data(X_train, X_val, X_test):
     X_test_scaled = scaler.transform(X_test)
     return X_train_scaled, X_val_scaled, X_test_scaled, scaler
 
-# 📌 Hiển thị một số mẫu dữ liệu
+# 📌 Hiển thị mẫu dữ liệu
 def show_sample_data(X, y):
     st.write("**5 mẫu dữ liệu đầu tiên:**")
     sample_df = pd.concat([X, pd.Series(y, name='Label')], axis=1).head(5)
@@ -55,12 +55,10 @@ def show_sample_data(X, y):
     st.write("**🌸 Minh họa vài mẫu dữ liệu**")
     fig, axes = plt.subplots(1, 2, figsize=(10, 4))
     
-    # Biểu đồ 1: Phân bố Leaf Length và Petal Size
     sns.scatterplot(data=pd.concat([X, pd.Series(y, name='Label')], axis=1), 
                     x='Leaf_Length', y='Petal_Size', hue='Label', palette='deep', ax=axes[0])
     axes[0].set_title("Leaf Length vs Petal Size")
     
-    # Biểu đồ 2: Phân bố Stem Length và Leaf Width
     sns.scatterplot(data=pd.concat([X, pd.Series(y, name='Label')], axis=1), 
                     x='Stem_Length', y='Leaf_Width', hue='Label', palette='deep', ax=axes[1])
     axes[1].set_title("Stem Length vs Leaf Width")
@@ -68,7 +66,31 @@ def show_sample_data(X, y):
     plt.tight_layout()
     st.pyplot(fig)
 
-# 📌 Huấn luyện mô hình
+# 📌 Vẽ minh họa hoa đơn giản dựa trên số đo
+def draw_flower_image(leaf_length, leaf_width, stem_length, petal_size, label):
+    fig, ax = plt.subplots(figsize=(4, 6))
+    
+    # Vẽ thân (stem)
+    ax.plot([0.5, 0.5], [0, stem_length/10], color='green', lw=3)
+    
+    # Vẽ lá (leaf)
+    ax.plot([0.5, 0.5 + leaf_width/10], [stem_length/20, stem_length/20 + leaf_length/20], color='darkgreen', lw=2)
+    ax.plot([0.5, 0.5 - leaf_width/10], [stem_length/20, stem_length/20 + leaf_length/20], color='darkgreen', lw=2)
+    
+    # Vẽ cánh hoa (petal)
+    circle = plt.Circle((0.5, stem_length/10), petal_size/20, color='pink' if label == 0 else 'purple')
+    ax.add_patch(circle)
+    
+    # Tùy chỉnh
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, max(stem_length/10 + petal_size/10, 1))
+    ax.set_aspect('equal')
+    ax.axis('off')
+    ax.set_title(f"Label {label}")
+    
+    return fig
+
+# 📌 Huấn luyện mô hình (giữ nguyên)
 def train_model(custom_model_name, model_name, params, X_train, X_val, X_test, y_train, y_val, y_test):
     progress_bar = st.progress(0)
     status_text = st.empty()
@@ -174,7 +196,7 @@ def create_streamlit_app():
         else:
             st.info("Vui lòng tải lên file CSV để bắt đầu tiền xử lý dữ liệu.")
 
-    # Tab 2: Huấn luyện
+    # Tab 2: Huấn luyện (giữ nguyên)
     with tab2:
         st.header("Huấn luyện mô hình")
         if 'X_train' not in st.session_state:
@@ -215,7 +237,6 @@ def create_streamlit_app():
     with tab3:
         st.header("Dự đoán")
         
-        # Lấy danh sách các mô hình đã huấn luyện từ MLflow
         runs = mlflow.search_runs(order_by=["start_time desc"])
         if not runs.empty and 'scaler' in st.session_state:
             runs["model_custom_name"] = runs["tags.mlflow.runName"]
@@ -241,12 +262,17 @@ def create_streamlit_app():
                         probabilities = selected_model.predict_proba(input_scaled)[0]
                         st.write(f"🎯 **Dự đoán: Label {prediction}**")
                         st.write(f"🔢 **Độ tin cậy: {probabilities[prediction] * 100:.2f}%**")
+                        
+                        # Minh họa hình ảnh hoa dựa trên số đo
+                        st.write("**🌼 Minh họa hoa dự đoán**")
+                        fig = draw_flower_image(leaf_length, leaf_width, stem_length, petal_size, prediction)
+                        st.pyplot(fig)
                 except Exception as e:
                     st.error(f"Không thể tải mô hình: {str(e)}")
         else:
             st.warning("Vui lòng huấn luyện ít nhất một mô hình và thực hiện tiền xử lý dữ liệu trước!")
 
-    # Tab 4: MLflow 
+    # Tab 4: MLflow (giữ nguyên)
     with tab4:
         st.header("MLflow Tracking")
         st.write("Xem chi tiết các kết quả đã lưu trong MLflow.")
