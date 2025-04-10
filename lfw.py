@@ -68,7 +68,7 @@ def show_sample_data(X, y):
     plt.tight_layout()
     st.pyplot(fig)
 
-# 📌 Huấn luyện mô hình (giữ nguyên như trước)
+# 📌 Huấn luyện mô hình
 def train_model(custom_model_name, model_name, params, X_train, X_val, X_test, y_train, y_val, y_test):
     progress_bar = st.progress(0)
     status_text = st.empty()
@@ -174,7 +174,7 @@ def create_streamlit_app():
         else:
             st.info("Vui lòng tải lên file CSV để bắt đầu tiền xử lý dữ liệu.")
 
-    # Tab 2: Huấn luyện (giữ nguyên)
+    # Tab 2: Huấn luyện
     with tab2:
         st.header("Huấn luyện mô hình")
         if 'X_train' not in st.session_state:
@@ -246,7 +246,7 @@ def create_streamlit_app():
         else:
             st.warning("Vui lòng huấn luyện ít nhất một mô hình và thực hiện tiền xử lý dữ liệu trước!")
 
-    # Tab 4: MLflow (giữ nguyên)
+    # Tab 4: MLflow 
     with tab4:
         st.header("MLflow Tracking")
         st.write("Xem chi tiết các kết quả đã lưu trong MLflow.")
