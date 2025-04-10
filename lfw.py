@@ -25,7 +25,9 @@ def load_data(uploaded_file=None):
             return None, None
     X = df.drop('Label', axis=1)
     y = df['Label'].astype(int)
-    return X, y
+    # Tính phạm vi của từng đặc trưng
+    feature_ranges = {col: (X[col].min(), X[col].max()) for col in X.columns}
+    return X, y, feature_ranges
 
 # 📌 Chia dữ liệu thành train, validation, và test
 @st.cache_data
@@ -81,12 +83,10 @@ def train_model(custom_model_name, model_name, params, X_train, X_val, X_test, y
 
     try:
         with mlflow.start_run(run_name=custom_model_name):
-            # Bước 1: Khởi tạo mô hình
             progress_bar.progress(0.1)
             status_text.text("Đang thực hiện K-Fold Cross Validation... (10%)")
             start_time = time.time()
 
-            # K-Fold Cross Validation
             kf = KFold(n_splits=k_folds, shuffle=True, random_state=42)
             cv_scores = []
             X_train_val = np.concatenate((X_train, X_val), axis=0)
@@ -106,13 +106,11 @@ def train_model(custom_model_name, model_name, params, X_train, X_val, X_test, y
             cv_mean = np.mean(cv_scores)
             cv_std = np.std(cv_scores)
 
-            # Bước 2: Huấn luyện mô hình trên toàn bộ tập train + validation
             progress_bar.progress(0.5)
             status_text.text("Đang huấn luyện mô hình trên toàn bộ dữ liệu... (50%)")
             model.fit(X_train_val, y_train_val)
             train_end_time = time.time()
 
-            # Bước 3: Dự đoán trên các tập dữ liệu
             y_train_pred = model.predict(X_train)
             progress_bar.progress(0.6)
             status_text.text("Đang dự đoán trên tập train... (60%)")
@@ -125,12 +123,10 @@ def train_model(custom_model_name, model_name, params, X_train, X_val, X_test, y
             progress_bar.progress(0.8)
             status_text.text("Đã dự đoán xong... (80%)")
 
-            # Tính toán độ chính xác
             train_accuracy = accuracy_score(y_train, y_train_pred)
             val_accuracy = accuracy_score(y_val, y_val_pred)
             test_accuracy = accuracy_score(y_test, y_test_pred)
 
-            # Bước 4: Ghi log vào MLflow
             status_text.text("Đang ghi log vào MLflow... (90%)")
             mlflow.log_param("model_name", model_name)
             mlflow.log_params(params)
@@ -164,8 +160,9 @@ def create_streamlit_app():
         uploaded_file = st.file_uploader("📤 Tải lên file CSV dữ liệu hoa (flower_measurements.csv)", type=["csv"])
         
         if uploaded_file is not None:
-            X, y = load_data(uploaded_file)
+            X, y, feature_ranges = load_data(uploaded_file)
             if X is not None and y is not None:
+                st.session_state['feature_ranges'] = feature_ranges  # Lưu phạm vi đặc trưng vào session_state
                 st.write(f"**Kích thước dữ liệu: {X.shape}**")
                 show_sample_data(X, y)
                 
@@ -200,7 +197,7 @@ def create_streamlit_app():
         else:
             st.info("Vui lòng tải lên file CSV để bắt đầu tiền xử lý dữ liệu.")
 
-    # Tab 2: Huấn luyện (bổ sung K-Fold)
+    # Tab 2: Huấn luyện
     with tab2:
         st.header("Huấn luyện mô hình")
         if 'X_train' not in st.session_state:
@@ -220,7 +217,6 @@ def create_streamlit_app():
                 params["kernel"] = st.selectbox("⚙️ Kernel", ["linear", "rbf", "poly", "sigmoid"])
                 params["C"] = st.slider("🔧 Tham số C", 0.1, 10.0, 1.0)
 
-            # Thêm tùy chọn K-Fold
             k_folds = st.slider("🔢 Số lượng K-Fold cho Cross Validation", min_value=2, max_value=10, value=5, step=1)
 
             if st.button("🚀 Huấn luyện mô hình"):
@@ -242,12 +238,12 @@ def create_streamlit_app():
                 else:
                     st.error("Huấn luyện thất bại, không có kết quả để hiển thị.")
 
-    # Tab 3: Dự đoán
+    # Tab 3: Dự đoán (bổ sung kiểm tra phạm vi)
     with tab3:
         st.header("Dự đoán")
         
         runs = mlflow.search_runs(order_by=["start_time desc"])
-        if not runs.empty and 'scaler' in st.session_state:
+        if not runs.empty and 'scaler' in st.session_state and 'feature_ranges' in st.session_state:
             runs["model_custom_name"] = runs["tags.mlflow.runName"]
             model_names = runs["model_custom_name"].tolist()
             
@@ -264,9 +260,28 @@ def create_streamlit_app():
                     stem_length = st.number_input("Stem Length", min_value=0.0, value=30.0)
                     petal_size = st.number_input("Petal Size", min_value=0.0, value=3.0)
                     
+                    # Kiểm tra phạm vi
+                    feature_ranges = st.session_state['feature_ranges']
+                    input_data = {
+                        'Leaf_Length': leaf_length,
+                        'Leaf_Width': leaf_width,
+                        'Stem_Length': stem_length,
+                        'Petal_Size': petal_size
+                    }
+                    out_of_range = []
+                    for feature, value in input_data.items():
+                        min_val, max_val = feature_ranges[feature]
+                        if value < min_val or value > max_val:
+                            out_of_range.append(f"{feature} ({value:.2f}) ngoài phạm vi [{min_val:.2f}, {max_val:.2f}]")
+                    
+                    if out_of_range:
+                        st.warning("Các thông số sau nằm ngoài phạm vi dữ liệu gốc:\n" + "\n".join(out_of_range))
+                    else:
+                        st.info("Tất cả thông số đều nằm trong phạm vi dữ liệu gốc.")
+                    
                     if st.button("🔮 Dự đoán"):
-                        input_data = np.array([[leaf_length, leaf_width, stem_length, petal_size]])
-                        input_scaled = st.session_state['scaler'].transform(input_data)
+                        input_array = np.array([[leaf_length, leaf_width, stem_length, petal_size]])
+                        input_scaled = st.session_state['scaler'].transform(input_array)
                         prediction = selected_model.predict(input_scaled)[0]
                         probabilities = selected_model.predict_proba(input_scaled)[0]
                         st.write(f"🎯 **Dự đoán: Label {prediction}**")
