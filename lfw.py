@@ -153,7 +153,7 @@ def create_streamlit_app():
     
     # Tab 1: Tiền xử lý dữ liệu
     with tab1:
-        st.header("Tiền xử lý dữ liệu")
+        st.write("##### Tiền xử lý dữ liệu")
         
         uploaded_file = st.file_uploader("📤 Tải lên file CSV dữ liệu hoa (flower_measurements.csv)", type=["csv"])
         
@@ -198,7 +198,7 @@ def create_streamlit_app():
 
     # Tab 2: Huấn luyện
     with tab2:
-        st.header("Huấn luyện mô hình")
+        st.write("##### Huấn luyện mô hình")
         if 'X_train' not in st.session_state:
             st.warning("Vui lòng thực hiện tiền xử lý dữ liệu trước!")
         else:
@@ -239,7 +239,7 @@ def create_streamlit_app():
 
     # Tab 3: Dự đoán 
     with tab3:
-        st.header("Dự đoán")
+        st.write("##### Dự đoán")
         
         runs = mlflow.search_runs(order_by=["start_time desc"])
         if not runs.empty and 'scaler' in st.session_state and 'df_original' in st.session_state:
@@ -290,7 +290,7 @@ def create_streamlit_app():
 
     # Tab 4: MLflow
     with tab4:
-        st.header("MLflow Tracking")
+        st.write("##### MLflow Tracking")
         st.write("Xem chi tiết các kết quả đã lưu trong MLflow.")
         
         runs = mlflow.search_runs(order_by=["start_time desc"])
