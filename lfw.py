@@ -88,24 +88,39 @@ def create_streamlit_app():
             if val_ratio >= 1.0:
                 st.error("Tỷ lệ Validation quá lớn so với Train! Vui lòng điều chỉnh lại.")
             else:
-                X_train, X_val, X_test, y_train, y_val, y_test = split_data(X, y, train_size=0.7, val_size=val_size/100, test_size=test_size/100)
                 if st.button("Tiền xử lý dữ liệu"):
-                    X_train_scaled, X_val_scaled, X_test_scaled, scaler = preprocess_data(X_train, X_val, X_test)
-                    st.session_state['X_train'] = X_train_scaled
-                    st.session_state['X_val'] = X_val_scaled
-                    st.session_state['X_test'] = X_test_scaled
-                    st.session_state['y_train'] = y_train
-                    st.session_state['y_val'] = y_val
-                    st.session_state['y_test'] = y_test
-                    st.session_state['scaler'] = scaler
-                    
-                    data_ratios = pd.DataFrame({
-                        "Tập dữ liệu": ["Train", "Validation", "Test"],
-                        "Tỷ lệ (%)": [train_size - val_size, val_size, test_size],
-                        "Số lượng mẫu": [len(X_train), len(X_val), len(X_test)]
-                    })
-                    st.table(data_ratios)
-                    st.success("Tiền xử lý dữ liệu hoàn tất!")
+                    with st.spinner("🔄 Đang xử lý dữ liệu..."):
+                        # Bước 1: Chia dữ liệu
+                        st.write("**Bước 1: Chia dữ liệu thành Train, Validation, Test**")
+                        X_train, X_val, X_test, y_train, y_val, y_test = split_data(X, y, 
+                            train_size=0.7, val_size=val_size/100, test_size=test_size/100)
+                        data_ratios = pd.DataFrame({
+                            "Tập dữ liệu": ["Train", "Validation", "Test"],
+                            "Tỷ lệ (%)": [train_size - val_size, val_size, test_size],
+                            "Số lượng mẫu": [len(X_train), len(X_val), len(X_test)]
+                        })
+                        st.table(data_ratios)
+                        
+                        # Bước 2: Chuẩn hóa dữ liệu
+                        st.write("**Bước 2: Chuẩn hóa dữ liệu bằng StandardScaler**")
+                        X_train_scaled, X_val_scaled, X_test_scaled, scaler = preprocess_data(X_train, X_val, X_test)
+                        
+                        # Hiển thị dữ liệu trước và sau khi chuẩn hóa
+                        st.write("**Dữ liệu Train trước khi chuẩn hóa (5 mẫu đầu tiên):**")
+                        st.dataframe(pd.DataFrame(X_train[:5], columns=X.columns))
+                        st.write("**Dữ liệu Train sau khi chuẩn hóa (5 mẫu đầu tiên):**")
+                        st.dataframe(pd.DataFrame(X_train_scaled[:5], columns=X.columns))
+                        
+                        # Lưu vào session_state
+                        st.session_state['X_train'] = X_train_scaled
+                        st.session_state['X_val'] = X_val_scaled
+                        st.session_state['X_test'] = X_test_scaled
+                        st.session_state['y_train'] = y_train
+                        st.session_state['y_val'] = y_val
+                        st.session_state['y_test'] = y_test
+                        st.session_state['scaler'] = scaler
+                        
+                        st.success("Tiền xử lý dữ liệu hoàn tất!")
 
     # Các tab khác giữ nguyên như trước
     with tab2:
